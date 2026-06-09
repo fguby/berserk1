@@ -8,6 +8,179 @@ type MangaGenerateRequest struct {
 	Quality string   `json:"quality,omitempty"`
 }
 
+type ComicScriptBeat struct {
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Shot     string   `json:"shot"`
+	Summary  string   `json:"summary"`
+	Dialogue string   `json:"dialogue,omitempty"`
+	Assets   []string `json:"assets"`
+}
+
+type ComicPanel struct {
+	ID      string `json:"id"`
+	BeatID  string `json:"beatID,omitempty"`
+	Layout  string `json:"layout,omitempty"`
+	Src     string `json:"src,omitempty"`
+	Caption string `json:"caption,omitempty"`
+}
+
+type ComicPage struct {
+	ID          string            `json:"id"`
+	EpisodeID   string            `json:"episodeID,omitempty"`
+	Title       string            `json:"title"`
+	Thumb       string            `json:"thumb,omitempty"`
+	Status      string            `json:"status"`
+	SortOrder   int               `json:"sortOrder"`
+	ScriptBeats []ComicScriptBeat `json:"scriptBeats,omitempty"`
+	Panels      []ComicPanel      `json:"panels,omitempty"`
+	CreatedAt   string            `json:"createdAt,omitempty"`
+	UpdatedAt   string            `json:"updatedAt,omitempty"`
+}
+
+type ComicEpisode struct {
+	ID        string      `json:"id"`
+	WorkID    string      `json:"workID,omitempty"`
+	Title     string      `json:"title"`
+	Status    string      `json:"status"`
+	Summary   string      `json:"summary,omitempty"`
+	SortOrder int         `json:"sortOrder"`
+	Pages     []ComicPage `json:"pages"`
+	CreatedAt string      `json:"createdAt,omitempty"`
+	UpdatedAt string      `json:"updatedAt,omitempty"`
+}
+
+type ComicWork struct {
+	ID        string         `json:"id"`
+	UserID    string         `json:"userID,omitempty"`
+	Title     string         `json:"title"`
+	Subtitle  string         `json:"subtitle,omitempty"`
+	Cover     string         `json:"cover,omitempty"`
+	UpdatedAt string         `json:"updatedAt"`
+	CreatedAt string         `json:"createdAt,omitempty"`
+	Episodes  []ComicEpisode `json:"episodes"`
+}
+
+type ComicAsset struct {
+	ID        string `json:"id"`
+	WorkID    string `json:"workID,omitempty"`
+	Type      string `json:"type"`
+	Title     string `json:"title"`
+	Prompt    string `json:"prompt,omitempty"`
+	Src       string `json:"src"`
+	Favorite  bool   `json:"favorite"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+type ComicWorksResponse struct {
+	Items  []ComicWork  `json:"items"`
+	Assets []ComicAsset `json:"assets,omitempty"`
+}
+
+type ComicWorkResponse struct {
+	Work ComicWork `json:"work"`
+	User *User     `json:"user,omitempty"`
+}
+
+type ComicEpisodeResponse struct {
+	Episode ComicEpisode `json:"episode"`
+	Work    ComicWork    `json:"work,omitempty"`
+	User    *User        `json:"user,omitempty"`
+}
+
+type ComicPageResponse struct {
+	Page ComicPage `json:"page"`
+	Work ComicWork `json:"work,omitempty"`
+	User *User     `json:"user,omitempty"`
+}
+
+type ComicAssetsResponse struct {
+	Items []ComicAsset `json:"items"`
+}
+
+type ComicAssetResponse struct {
+	Asset ComicAsset `json:"asset"`
+	User  *User      `json:"user,omitempty"`
+}
+
+type ComicCreateWorkRequest struct {
+	Title    string `json:"title"`
+	Subtitle string `json:"subtitle,omitempty"`
+	Cover    string `json:"cover,omitempty"`
+}
+
+type ComicCreateEpisodeRequest struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary,omitempty"`
+}
+
+type ComicCreatePageRequest struct {
+	Title string `json:"title"`
+	Thumb string `json:"thumb,omitempty"`
+}
+
+type ComicUpdatePageRequest struct {
+	Title       string            `json:"title,omitempty"`
+	Thumb       string            `json:"thumb,omitempty"`
+	Status      string            `json:"status,omitempty"`
+	ScriptBeats []ComicScriptBeat `json:"scriptBeats,omitempty"`
+	Panels      []ComicPanel      `json:"panels,omitempty"`
+}
+
+type ComicParseScriptRequest struct {
+	WorkID    string `json:"workID,omitempty"`
+	EpisodeID string `json:"episodeID,omitempty"`
+	PageID    string `json:"pageID,omitempty"`
+	Text      string `json:"text"`
+}
+
+type ComicParseScriptResponse struct {
+	Beats   []ComicScriptBeat `json:"beats"`
+	Assets  []ComicAsset      `json:"assets"`
+	Page    *ComicPage        `json:"page,omitempty"`
+	Work    *ComicWork        `json:"work,omitempty"`
+	Credits int               `json:"credits"`
+	User    *User             `json:"user,omitempty"`
+}
+
+type ComicGenerateImageRequest struct {
+	WorkID      string   `json:"workID,omitempty"`
+	PageID      string   `json:"pageID,omitempty"`
+	PanelID     string   `json:"panelID,omitempty"`
+	AssetID     string   `json:"assetID,omitempty"`
+	Type        string   `json:"type,omitempty"`
+	Title       string   `json:"title,omitempty"`
+	Prompt      string   `json:"prompt"`
+	Images      []string `json:"images,omitempty"`
+	N           int      `json:"n,omitempty"`
+	Size        string   `json:"size,omitempty"`
+	Quality     string   `json:"quality,omitempty"`
+	Favorite    bool     `json:"favorite,omitempty"`
+	ApplyToPage bool     `json:"applyToPage,omitempty"`
+}
+
+type ComicGenerateImageResponse struct {
+	Images  []WebGeneratedImage `json:"images"`
+	Asset   *ComicAsset         `json:"asset,omitempty"`
+	Page    *ComicPage          `json:"page,omitempty"`
+	Work    *ComicWork          `json:"work,omitempty"`
+	Credits int                 `json:"credits"`
+	User    *User               `json:"user,omitempty"`
+}
+
+type ComicAssetFavoriteRequest struct {
+	Favorite bool `json:"favorite"`
+}
+
+type ComicAssetUpdateRequest struct {
+	Type     string `json:"type,omitempty"`
+	Title    string `json:"title,omitempty"`
+	Prompt   string `json:"prompt,omitempty"`
+	Src      string `json:"src,omitempty"`
+	Favorite *bool  `json:"favorite,omitempty"`
+}
+
 type WebImageGenerateRequest struct {
 	Prompt         string   `json:"prompt"`
 	Style          string   `json:"style,omitempty"`

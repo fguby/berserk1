@@ -80,7 +80,7 @@ func Load() Config {
 		SMTPUsername:           getEnv("SMTP_USERNAME", fileConfig.value("smtp_username", "")),
 		SMTPPassword:           getEnv("SMTP_PASSWORD", fileConfig.value("smtp_password", "")),
 		SMTPFromEmail:          getEnv("SMTP_FROM_EMAIL", fileConfig.value("smtp_from_email", "")),
-		SMTPFromName:           getEnv("SMTP_FROM_NAME", fileConfig.value("smtp_from_name", "Berserk AI")),
+		SMTPFromName:           getEnv("SMTP_FROM_NAME", fileConfig.value("smtp_from_name", "NeoAI")),
 		SMTPTLSMode:            getEnv("SMTP_TLS_MODE", fileConfig.value("smtp_tls_mode", "starttls")),
 		XAIAPIKey:              getEnv("XAI_API_KEY", fileConfig.value("xai_api_key", "")),
 		XAIBaseURL:             strings.TrimRight(getEnv("XAI_BASE_URL", fileConfig.value("xai_base_url", "https://api-xai.ainaibahub.com/v1")), "/"),

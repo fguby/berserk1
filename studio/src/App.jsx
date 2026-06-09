@@ -3,6 +3,7 @@ import {
   BarChart3,
   BookImage,
   Brush,
+  ChevronLeft,
   ChevronDown,
   Compass,
   Copy,
@@ -14,15 +15,22 @@ import {
   Home,
   Hash,
   Image as ImageIcon,
+  ImagePlus,
   KeyRound,
   LayoutTemplate,
   Link2,
   LoaderCircle,
+  Lock,
   LogOut,
   Mail,
   Menu,
+  MessageCircle,
+  MousePointer2,
   Moon,
+  Move,
   Palette,
+  PanelTop,
+  PanelsTopLeft,
   Plus,
   RefreshCw,
   Search,
@@ -31,7 +39,9 @@ import {
   Sparkles,
   Star,
   Sun,
+  Type,
   Languages,
+  Unlock,
   UserRound,
   Video,
   WandSparkles,
@@ -39,7 +49,7 @@ import {
   Zap,
 } from 'lucide-react';
 
-const DEFAULT_API_BASE_URL = import.meta.env.PROD ? 'https://neo-ai.pw/berserk' : '/berserk';
+const DEFAULT_API_BASE_URL = 'https://neo-ai.pw/berserk';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '');
 const AUTH_APP_ID = 'berserk.web';
 const AUTH_STORAGE_KEY = 'berserk-ai-auth-session';
@@ -59,10 +69,99 @@ const navItems = [
 const aiAppItems = [
   { label: '角色创建器', icon: UserRound },
   { label: 'AI 动漫生成器', icon: ImageIcon },
-  { label: '尺寸修改器', icon: LayoutTemplate, tool: 'size-editor' },
+  { label: 'AI 漫画', icon: PanelsTopLeft, tool: 'comic-studio' },
+  { label: '格式/尺寸修改器', icon: LayoutTemplate, tool: 'size-editor' },
   { label: '线稿上色', icon: Palette },
   { label: 'AI 动画制作工具', icon: Video },
 ];
+
+const comicScriptBeats = [];
+const comicPanelsSeed = [];
+const comicAssetsSeed = [];
+const comicQueueSeed = [];
+const comicWorksSeed = [];
+const emptyComicBeat = { id: '', title: '未选择分镜', shot: '', summary: '', dialogue: '', assets: [] };
+const emptyComicPanel = { id: '', beatID: '', src: '', caption: '', layout: 'wide' };
+
+function normalizeComicPage(page = {}) {
+  return {
+    id: page.id || `page-${Date.now()}`,
+    episodeID: page.episodeID || '',
+    title: page.title || '第 1 页',
+    thumb: page.thumb || '',
+    status: page.status || '草稿',
+    sortOrder: page.sortOrder || 0,
+    scriptBeats: Array.isArray(page.scriptBeats) ? page.scriptBeats : [],
+    panels: Array.isArray(page.panels) ? page.panels : [],
+    createdAt: page.createdAt || '',
+    updatedAt: page.updatedAt || '',
+  };
+}
+
+function normalizeComicEpisode(episode = {}) {
+  return {
+    id: episode.id || `ep-${Date.now()}`,
+    workID: episode.workID || '',
+    title: episode.title || '第 1 话 · 未命名章节',
+    status: episode.status || '草稿',
+    summary: episode.summary || '',
+    sortOrder: episode.sortOrder || 0,
+    pages: (episode.pages || []).map(normalizeComicPage),
+    createdAt: episode.createdAt || '',
+    updatedAt: episode.updatedAt || '',
+  };
+}
+
+function normalizeComicWork(work = {}) {
+  return {
+    id: work.id || `work-${Date.now()}`,
+    title: work.title || '新漫画作品',
+    subtitle: work.subtitle || '草稿',
+    cover: work.cover || '',
+    updatedAt: formatComicUpdatedAt(work.updatedAt),
+    createdAt: work.createdAt || '',
+    episodes: (work.episodes || []).map(normalizeComicEpisode),
+  };
+}
+
+function normalizeComicAsset(asset = {}) {
+  return {
+    id: asset.id || `asset-${Date.now()}`,
+    workID: asset.workID || '',
+    type: asset.type || '人物',
+    title: asset.title || '未命名资产',
+    prompt: asset.prompt || '',
+    src: asset.src || '',
+    favorite: Boolean(asset.favorite),
+    createdAt: asset.createdAt || '',
+    updatedAt: asset.updatedAt || '',
+  };
+}
+
+function mergeComicAssets(current, incoming) {
+  const seen = new Set();
+  return [...incoming, ...current].filter((asset) => {
+    const key = asset.id || `${asset.type}-${asset.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isBackendID(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || ''));
+}
+
+function formatComicUpdatedAt(value) {
+  if (!value) return '刚刚';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diff = Date.now() - date.getTime();
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3_600_000) return `${Math.max(1, Math.round(diff / 60_000))} 分钟前`;
+  if (diff < 86_400_000) return `${Math.max(1, Math.round(diff / 3_600_000))} 小时前`;
+  return date.toLocaleDateString('zh-CN');
+}
 const filterChips = [
   { label: '所有帖子' },
   { label: '精选', active: true, icon: Star },
@@ -70,7 +169,7 @@ const filterChips = [
   { label: '动画片', icon: Video },
   { label: '音乐', icon: Sparkles },
   { label: '幻灯片', icon: BookImage },
-  { label: 'BerserkAIConfession', featured: true },
+  { label: 'NeoAIConfession', featured: true },
   { label: '场景', hash: true },
   { label: 'OC', hash: true },
   { label: '可爱' },
@@ -204,7 +303,7 @@ function tagsFromImages(items) {
     ['赛博朋克', /赛博|霓虹|未来感/],
   ];
   const tags = dictionary.filter(([, pattern]) => pattern.test(source)).map(([label]) => label);
-  return Array.from(new Set(['小说封面', '所有帖子', '精选', ...tags, 'BerserkAIConfession', 'OC', 'NSFW'])).slice(0, 18);
+  return Array.from(new Set(['小说封面', '所有帖子', '精选', ...tags, 'NeoAIConfession', 'OC', 'NSFW'])).slice(0, 18);
 }
 
 function normalizeGalleryItem(item) {
@@ -228,7 +327,7 @@ function normalizeGalleryItem(item) {
     textureSrc: item.textureURL || textureProxyURLFor(imageURL) || textureProxyURLFor(thumbnailURL) || thumbnailURL || imageURL,
     width,
     height,
-    author: item.author || 'Berserk AI',
+    author: item.author || 'Neo AI',
     authorAvatarURL: item.authorAvatarURL || '/assets/berserk-ai-icon.png',
     likes: item.likeCount || 0,
     likeCount: item.likeCount || 0,
@@ -264,7 +363,7 @@ function textureProxyURLFor(value) {
     const key = parsed.pathname.replace(/^\/+/, '');
     if (!bucket || !key) return '';
     const params = new URLSearchParams({ bucket, key, provider: 'r2' });
-    return `/berserk/api/v1/images/proxy?${params.toString()}`;
+    return `${API_BASE_URL}/api/v1/images/proxy?${params.toString()}`;
   } catch {
     return '';
   }
@@ -310,6 +409,7 @@ function App() {
   const [comingSoonOpen, setComingSoonOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [sizeEditorOpen, setSizeEditorOpen] = useState(false);
+  const [comicStudioOpen, setComicStudioOpen] = useState(false);
   const [generationTasks, setGenerationTasks] = useState([]);
   const [taskNotice, setTaskNotice] = useState('');
   const [appModal, setAppModal] = useState(null);
@@ -549,7 +649,7 @@ function App() {
       textureSrc: image.textureURL || textureProxyURLFor(image.url) || textureProxyURLFor(image.thumbnailURL) || image.thumbnailURL || image.url,
       width: 1024,
       height: size.includes('16:9') || size.includes('4:3') || size.includes('21:9') ? 768 : 1365,
-      author: authSession.user?.displayName || authSession.user?.email || 'Berserk AI',
+      author: authSession.user?.displayName || authSession.user?.email || 'Neo AI',
       likes: 0,
       likeCount: 0,
       likedByMe: false,
@@ -651,6 +751,7 @@ function App() {
             else setShareOpen(true);
           }} onAuthOpen={() => setAuthOpen(true)} onLogout={handleLogout} onAppClick={(tool) => {
             if (tool === 'size-editor') setSizeEditorOpen(true);
+            else if (tool === 'comic-studio') setComicStudioOpen(true);
             else setComingSoonOpen(true);
           }} />
           <main className="workspace">
@@ -695,6 +796,7 @@ function App() {
               onAppClick={(tool) => {
                 setMobileMenuOpen(false);
                 if (tool === 'size-editor') setSizeEditorOpen(true);
+                else if (tool === 'comic-studio') setComicStudioOpen(true);
                 else setComingSoonOpen(true);
               }}
             />
@@ -703,9 +805,10 @@ function App() {
       )}
       {selectedImage ? <ImagePreview item={selectedImage} models={imageModels} currentUser={authSession?.user} onClose={() => setSelectedImage(null)} onLike={handleLikeImage} onFavorite={handleFavoriteImage} onGenerate={handleGenerateImage} onMessage={setAppModal} /> : null}
       {shareOpen ? <ShareModal session={authSession} onClose={() => setShareOpen(false)} onAuthOpen={() => setAuthOpen(true)} /> : null}
-      {profileOpen ? <ProfileModal session={authSession} onClose={() => setProfileOpen(false)} onAuthOpen={() => setAuthOpen(true)} onUserChange={handleSessionUser} /> : null}
+      {profileOpen ? <ProfileModal session={authSession} onClose={() => setProfileOpen(false)} onAuthOpen={() => setAuthOpen(true)} onUserChange={handleSessionUser} onSessionChange={handleAuthSuccess} /> : null}
       {authOpen ? <AuthModal onClose={() => setAuthOpen(false)} onSuccess={handleAuthSuccess} /> : null}
       {sizeEditorOpen ? <SizeEditorModal onClose={() => setSizeEditorOpen(false)} /> : null}
+      {comicStudioOpen ? <ComicStudioModal session={authSession} onAuthOpen={() => setAuthOpen(true)} onUserChange={handleSessionUser} onClose={() => setComicStudioOpen(false)} /> : null}
       {comingSoonOpen ? <AppModal title="即将上线" message="AI 应用模块正在打磨中，后续会接入更多创作工具。" onClose={() => setComingSoonOpen(false)} /> : null}
       {taskNotice ? <AppModal title="正在生成" message={taskNotice} onClose={() => setTaskNotice('')} /> : null}
       {appModal ? <AppModal {...appModal} onClose={() => setAppModal(null)} /> : null}
@@ -777,11 +880,11 @@ function PricingNoticeTicker() {
 function Sidebar({ currentUser, currentView, pendingTaskCount, onNavigate, onProfileOpen, onShareOpen, onAuthOpen, onLogout, onAppClick }) {
   return (
     <aside className="sidebar">
-      <a className="brand" href="#" aria-label="Berserk AI" onClick={() => onNavigate('home')}>
+      <a className="brand" href="#" aria-label="Neo AI" onClick={() => onNavigate('home')}>
         <img src="/assets/berserk-ai-icon.png" alt="" />
         <span>
-          <strong>BERSERK AI</strong>
-          <small>www.berserk-ai.com</small>
+          <strong>NEO AI</strong>
+          <small>https://neo-ai.pw/</small>
         </span>
       </a>
       <nav className="side-nav" aria-label="主导航">
@@ -825,7 +928,7 @@ function Sidebar({ currentUser, currentView, pendingTaskCount, onNavigate, onPro
       <section className="share-card">
         <button type="button" onClick={onShareOpen}>
           <span>
-            <strong>分享 Berserk</strong>
+            <strong>分享 Neo AI</strong>
             <small>邀请注册得 10 积分</small>
           </span>
           <i>
@@ -852,7 +955,7 @@ function Sidebar({ currentUser, currentView, pendingTaskCount, onNavigate, onPro
         </button>
       )}
       <div className="social-row">
-        <a href="https://www.douyin.com/user/MS4wLjABAAAAPctRiYcwFwNx7JTqw55gxq20_jzroA_b48W1edHc7eI" target="_blank" rel="noreferrer" aria-label="Berserk AI 抖音">
+        <a href="https://www.douyin.com/user/MS4wLjABAAAAPctRiYcwFwNx7JTqw55gxq20_jzroA_b48W1edHc7eI" target="_blank" rel="noreferrer" aria-label="Neo AI 抖音">
           <img src="/assets/douyin-icon.svg" alt="" />
         </a>
       </div>
@@ -866,7 +969,7 @@ function MobileTopbar({ onHome, onMenuOpen }) {
       <a
         className="brand"
         href="#"
-        aria-label="Berserk AI"
+        aria-label="Neo AI"
         onClick={(event) => {
           event.preventDefault();
           onHome();
@@ -874,7 +977,7 @@ function MobileTopbar({ onHome, onMenuOpen }) {
       >
         <img src="/assets/berserk-ai-icon.png" alt="" />
         <span>
-          <strong>BERSERK AI</strong>
+          <strong>NEO AI</strong>
           <small>AI Image Studio</small>
         </span>
       </a>
@@ -895,7 +998,7 @@ function MobileNavDrawer({ currentUser, currentView, pendingTaskCount, onClose, 
           <a
             className="brand"
             href="#"
-            aria-label="Berserk AI"
+            aria-label="Neo AI"
             onClick={(event) => {
               event.preventDefault();
               onNavigate('home');
@@ -903,7 +1006,7 @@ function MobileNavDrawer({ currentUser, currentView, pendingTaskCount, onClose, 
           >
             <img src="/assets/berserk-ai-icon.png" alt="" />
             <span>
-              <strong>BERSERK AI</strong>
+              <strong>NEO AI</strong>
               <small>AI Image Studio</small>
             </span>
           </a>
@@ -1140,7 +1243,7 @@ function KomikoComposer({ models, feedItems, activeQuery, activeSort, onQueryCha
           </div>
           {dynamicTags.map((label, index) => (
             <button
-              className={`${label === '精选' ? 'active-chip' : label === 'BerserkAIConfession' ? 'featured-chip' : ''}${activeQuery === label || (!activeQuery && label === '所有帖子') ? ' selected' : ''}`}
+              className={`${label === '精选' ? 'active-chip' : label === 'NeoAIConfession' ? 'featured-chip' : ''}${activeQuery === label || (!activeQuery && label === '所有帖子') ? ' selected' : ''}`}
               type="button"
               key={label}
               onClick={() => applyQuery(label)}
@@ -1314,11 +1417,13 @@ function MasonryFeed({ items, loading, loadingMore, hasMore, onLoadMore, onOpen,
                   <span className="masonry-author-line">
                     <img src={item.authorAvatarURL || '/assets/berserk-ai-icon.png'} alt="" />
                     <small>{item.author}</small>
-                    <span className="masonry-stats" aria-label={`点赞 ${(item.likeCount ?? item.likes) || 0}，收藏 ${item.favoriteCount || 0}`}>
+                    <span className="masonry-stats" aria-label={`点赞 ${(item.likeCount ?? item.likes) || 0}`}>
                       <em>♡ {(item.likeCount ?? item.likes) || 0}</em>
-                      <em><Star size={13} fill="none" /> {item.favoriteCount || 0}</em>
                     </span>
                   </span>
+                </span>
+                <span className="masonry-favorite-count" aria-label={`收藏 ${item.favoriteCount || 0}`}>
+                  <Star size={13} fill="none" /> {item.favoriteCount || 0}
                 </span>
                 <span className="card-actions" onClick={(event) => event.stopPropagation()}>
                   <button type="button" aria-label="点赞" onClick={() => onLike(item, !item.likedByMe)}>
@@ -1454,7 +1559,7 @@ function MasonryImage({ item }) {
       <img
         className="masonry-image"
         src={item.src}
-        alt={`${item.author || 'Berserk AI'} 的作品`}
+        alt={`${item.author || 'Neo AI'} 的作品`}
         loading="lazy"
         decoding="async"
         onError={() => setLoaded(true)}
@@ -1679,7 +1784,7 @@ function ImagePreview({ item, models, currentUser, onClose, onLike, onFavorite, 
                 <img src={item.authorAvatarURL || '/assets/berserk-ai-icon.png'} alt="" />
                 <span>
                   <strong>{item.author}</strong>
-                  <small>@{String(item.author || 'BerserkAI').replace(/\s+/g, '')}</small>
+                  <small>@{String(item.author || 'NeoAI').replace(/\s+/g, '')}</small>
                 </span>
               </div>
               <div className="preview-stats">
@@ -1863,6 +1968,1150 @@ function PreviewGeneratePanel({ item, models, useReference, onBack, onGenerate }
   );
 }
 
+function ComicStudioModal({ session, onAuthOpen, onUserChange, onClose }) {
+  const [works, setWorks] = useState(comicWorksSeed);
+  const [comicView, setComicView] = useState('works');
+  const [selectedWorkID, setSelectedWorkID] = useState('');
+  const [selectedEpisodeID, setSelectedEpisodeID] = useState('');
+  const [selectedComicPageID, setSelectedComicPageID] = useState('');
+  const [scriptBeats, setScriptBeats] = useState(comicScriptBeats);
+  const [panels, setPanels] = useState(comicPanelsSeed);
+  const [assets, setAssets] = useState(comicAssetsSeed);
+  const [queue, setQueue] = useState(comicQueueSeed);
+  const [assetTab, setAssetTab] = useState('人物');
+  const [selectedPanelID, setSelectedPanelID] = useState('');
+  const [selectedBeatID, setSelectedBeatID] = useState('');
+  const [selectedAssetID, setSelectedAssetID] = useState('');
+  const [zoom, setZoom] = useState(88);
+  const [autoLayout, setAutoLayout] = useState(true);
+  const [pageSize, setPageSize] = useState('A4 竖版');
+  const [panelTemplate, setPanelTemplate] = useState('经典 6 格');
+  const [activeTool, setActiveTool] = useState('组装页面');
+  const [scriptTab, setScriptTab] = useState('故事线');
+  const [assetQuery, setAssetQuery] = useState('');
+  const [busyAction, setBusyAction] = useState('');
+  const [novelDraft, setNovelDraft] = useState('');
+  const [bubbleShape, setBubbleShape] = useState('圆角气泡');
+  const [letteringStyle, setLetteringStyle] = useState('黑体对白');
+  const [pageTone, setPageTone] = useState('黑白高反差');
+  const [showPanelGuides, setShowPanelGuides] = useState(true);
+  const [autoSaveDraft, setAutoSaveDraft] = useState(true);
+  const [matureFilter, setMatureFilter] = useState(true);
+  const [comicLoading, setComicLoading] = useState(false);
+  const [toast, setToast] = useState('');
+  const toastTimerRef = useRef(0);
+
+  useEscape(onClose);
+
+  useEffect(() => () => window.clearTimeout(toastTimerRef.current), []);
+
+  useEffect(() => {
+    if (!session?.token) {
+      setComicLoading(false);
+      setWorks([]);
+      setAssets([]);
+      setScriptBeats([]);
+      setPanels([]);
+      setQueue([]);
+      setSelectedWorkID('');
+      setSelectedEpisodeID('');
+      setSelectedComicPageID('');
+      setSelectedPanelID('');
+      setSelectedBeatID('');
+      setSelectedAssetID('');
+      return;
+    }
+    let cancelled = false;
+    setComicLoading(true);
+    getJSON('/api/v1/manga/works', session.token)
+      .then((payload) => {
+        if (cancelled) return;
+        const remoteWorks = (payload?.items || []).map(normalizeComicWork);
+        const remoteAssets = (payload?.assets || []).map(normalizeComicAsset);
+        setWorks(remoteWorks);
+        setAssets(remoteAssets);
+        if (remoteWorks.length > 0) {
+          const firstWork = remoteWorks[0];
+          const firstEpisode = firstWork.episodes[0];
+          const firstPage = firstEpisode?.pages[0];
+          setSelectedWorkID(firstWork.id);
+          setSelectedEpisodeID(firstEpisode?.id || '');
+          setSelectedComicPageID(firstPage?.id || '');
+          setScriptBeats(firstPage?.scriptBeats || []);
+          setPanels(firstPage?.panels || []);
+          setSelectedBeatID(firstPage?.scriptBeats?.[0]?.id || '');
+          setSelectedPanelID(firstPage?.panels?.[0]?.id || '');
+        } else {
+          setSelectedWorkID('');
+          setSelectedEpisodeID('');
+          setSelectedComicPageID('');
+          setScriptBeats([]);
+          setPanels([]);
+          setSelectedBeatID('');
+          setSelectedPanelID('');
+        }
+        setSelectedAssetID(remoteAssets[0]?.id || '');
+      })
+      .catch((error) => showToast(getErrorMessage(error, '漫画数据加载失败')))
+      .finally(() => {
+        if (!cancelled) setComicLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.token]);
+
+  const showToast = (message) => {
+    setToast(message);
+    window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(''), 1900);
+  };
+
+  const selectedPanel = panels.find((panel) => panel.id === selectedPanelID) || panels[0] || emptyComicPanel;
+  const selectedBeat = scriptBeats.find((beat) => beat.id === selectedBeatID) || scriptBeats[0] || emptyComicBeat;
+  const selectedAsset = assets.find((asset) => asset.id === selectedAssetID) || assets[0] || null;
+  const visibleAssets = assets.filter((asset) => {
+    const tabMatched = assetTab === '收藏' ? asset.favorite : asset.type === assetTab;
+    const query = assetQuery.trim().toLowerCase();
+    if (!tabMatched) return false;
+    if (!query) return true;
+    return `${asset.title} ${asset.prompt || ''}`.toLowerCase().includes(query);
+  });
+  const selectedWork = works.find((work) => work.id === selectedWorkID) || works[0];
+  const selectedEpisode = selectedWork?.episodes.find((episode) => episode.id === selectedEpisodeID) || selectedWork?.episodes[0];
+  const selectedComicPage = selectedEpisode?.pages.find((page) => page.id === selectedComicPageID) || selectedEpisode?.pages[0];
+  const scriptSourceText = scriptBeats.map((beat) => `${beat.title}。${beat.summary}${beat.dialogue ? `“${beat.dialogue}”` : ''}`).join('\n');
+
+  const requireComicAuth = () => {
+    if (session?.token) return true;
+    showToast('请先登录后使用 AI 漫画功能');
+    onAuthOpen?.();
+    return false;
+  };
+
+  const replaceWork = (nextWork) => {
+    const normalized = normalizeComicWork(nextWork);
+    setWorks((items) => items.map((work) => (work.id === normalized.id ? normalized : work)));
+    return normalized;
+  };
+
+  const replacePageInWorks = (nextPage) => {
+    const normalized = normalizeComicPage(nextPage);
+    setWorks((items) => items.map((work) => ({
+      ...work,
+      episodes: work.episodes.map((episode) => ({
+        ...episode,
+        pages: episode.pages.map((page) => (page.id === normalized.id ? { ...page, ...normalized } : page)),
+      })),
+    })));
+    return normalized;
+  };
+
+  const applyPageState = (page) => {
+    if (!page) return;
+    const normalized = normalizeComicPage(page);
+    setSelectedComicPageID(normalized.id);
+    setScriptBeats(normalized.scriptBeats || []);
+    setPanels(normalized.panels || []);
+    setSelectedBeatID(normalized.scriptBeats?.[0]?.id || '');
+    setSelectedPanelID(normalized.panels?.[0]?.id || '');
+  };
+
+  const runComicAction = async (key, action) => {
+    if (busyAction) return null;
+    setBusyAction(key);
+    try {
+      return await action();
+    } catch (error) {
+      showToast(getErrorMessage(error, '操作失败'));
+      return null;
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const selectBeat = (beatID) => {
+    setSelectedBeatID(beatID);
+    const matchingPanel = panels.find((panel) => panel.beatID === beatID);
+    if (matchingPanel) setSelectedPanelID(matchingPanel.id);
+  };
+
+  const selectPanel = (panelID) => {
+    setSelectedPanelID(panelID);
+    const panel = panels.find((item) => item.id === panelID);
+    if (panel?.beatID) setSelectedBeatID(panel.beatID);
+  };
+
+  const toggleFavoriteAsset = (assetID) => {
+    const current = assets.find((asset) => asset.id === assetID);
+    if (!current) return;
+    setAssets((items) => items.map((asset) => (asset.id === assetID ? { ...asset, favorite: !asset.favorite } : asset)));
+    if (!session?.token || !isBackendID(assetID)) return;
+    authPostJSON(`/api/v1/studio/assets/${assetID}/favorite`, session.token, { favorite: !current.favorite }, '收藏资产失败')
+      .then((payload) => {
+        if (payload?.asset) {
+          const nextAsset = normalizeComicAsset(payload.asset);
+          setAssets((items) => items.map((asset) => (asset.id === nextAsset.id ? nextAsset : asset)));
+        }
+      })
+      .catch((error) => showToast(getErrorMessage(error, '收藏资产失败')));
+  };
+
+  const applyAssetToPanel = (asset = selectedAsset) => {
+    if (!asset) return;
+    setPanels((items) => items.map((panel) => (panel.id === selectedPanelID ? { ...panel, src: asset.src } : panel)));
+    showToast(`${asset.title} 已替换到当前画格`);
+  };
+
+  const regeneratePanel = () => {
+    if (!requireComicAuth()) return;
+    const nextTask = {
+      id: `queue-${Date.now()}`,
+      title: `${selectedComicPage?.title || '当前页面'} · ${selectedBeat.title.replace(/^第\s*/, '')}`,
+      subtitle: selectedBeat.summary,
+      progress: 8,
+      status: '生成中',
+      src: selectedPanel.src,
+    };
+    setQueue((items) => [nextTask, ...items].slice(0, 4));
+    runComicAction('generate-panel', async () => {
+      const payload = await authPostJSON('/api/v1/manga/generate', session.token, {
+        workID: selectedWork?.id,
+        pageID: selectedComicPage?.id,
+        panelID: selectedPanel?.id,
+        prompt: `${selectedBeat.summary}${selectedBeat.dialogue ? `，对白：${selectedBeat.dialogue}` : ''}`,
+        title: selectedBeat.title,
+        type: '画格',
+        size: pageSize === 'Webtoon 长条' ? '1024x1792' : '1024x1360',
+        quality: 'medium',
+        n: 1,
+        images: selectedAsset?.src ? [selectedAsset.src] : [],
+        applyToPage: true,
+      }, '生成画格失败');
+      if (payload?.user) onUserChange?.(payload.user);
+      const image = payload?.images?.[0];
+      if (image?.url) {
+        const nextSrc = image.thumbnailURL || image.url;
+        setPanels((items) => items.map((panel) => (panel.id === selectedPanelID ? { ...panel, src: nextSrc } : panel)));
+        setQueue((items) => items.map((item) => (item.id === nextTask.id ? { ...item, src: nextSrc, status: '已完成', progress: 100 } : item)));
+      }
+      if (payload?.page) replacePageInWorks(payload.page);
+      if (payload?.work) replaceWork(payload.work);
+      showToast(`画格已生成，扣除 ${payload?.credits || 3} 积分`);
+    });
+  };
+
+  const updatePanelCaption = (value) => {
+    setPanels((items) => items.map((panel) => (panel.id === selectedPanelID ? { ...panel, caption: value } : panel)));
+  };
+
+  const addPage = () => {
+    if (!requireComicAuth()) return;
+    if (!isBackendID(selectedEpisode?.id)) {
+      showToast('请先选择真实章节');
+      return;
+    }
+    runComicAction('add-page', async () => {
+      const title = `第 ${(selectedEpisode?.pages.length || 0) + 1} 页`;
+      const payload = await authPostJSON(`/api/v1/manga/episodes/${selectedEpisode.id}/pages`, session.token, { title, thumb: '' }, '新增页面失败');
+      if (payload?.page) {
+        const remotePage = normalizeComicPage(payload.page);
+        setWorks((items) => items.map((work) => (
+          work.id !== selectedWorkID
+            ? work
+            : { ...work, episodes: work.episodes.map((episode) => (episode.id === selectedEpisodeID ? { ...episode, pages: [...episode.pages, remotePage] } : episode)) }
+        )));
+        setSelectedComicPageID(remotePage.id);
+        setScriptBeats([]);
+        setPanels([]);
+        setSelectedBeatID('');
+        setSelectedPanelID('');
+        showToast('已新增空白漫画页');
+      }
+    });
+  };
+
+  const parseAgain = () => {
+    if (!requireComicAuth()) return;
+    runComicAction('parse-script', async () => {
+      const payload = await authPostJSON('/api/v1/manga/script', session.token, {
+        workID: selectedWork?.id,
+        episodeID: selectedEpisode?.id,
+        pageID: selectedComicPage?.id,
+        text: scriptSourceText || selectedEpisode?.summary || selectedWork?.title || novelDraft,
+      }, '拆书失败');
+      if (payload?.beats?.length) setScriptBeats(payload.beats);
+      if (payload?.assets?.length) {
+        const incoming = payload.assets.map(normalizeComicAsset);
+        setAssets((items) => mergeComicAssets(items, incoming));
+      }
+      if (payload?.page) replacePageInWorks(payload.page);
+      if (payload?.work) replaceWork(payload.work);
+      if (payload?.user) onUserChange?.(payload.user);
+      showToast(`拆书完成，扣除 ${payload?.credits || 3} 积分`);
+    });
+  };
+
+  const openWork = (workID) => {
+    const nextWork = works.find((work) => work.id === workID);
+    if (!nextWork) return;
+    const nextEpisode = nextWork.episodes[0];
+    setSelectedWorkID(nextWork.id);
+    setSelectedEpisodeID(nextEpisode?.id || '');
+    setSelectedComicPageID(nextEpisode?.pages[0]?.id || '');
+    setComicView('episodes');
+  };
+
+  const openEpisode = (episodeID) => {
+    const nextEpisode = selectedWork?.episodes.find((episode) => episode.id === episodeID);
+    if (!nextEpisode) return;
+    setSelectedEpisodeID(nextEpisode.id);
+    setSelectedComicPageID(nextEpisode.pages[0]?.id || '');
+    setComicView('pages');
+  };
+
+  const openPage = (pageID) => {
+    const page = selectedEpisode?.pages.find((item) => item.id === pageID);
+    applyPageState(page);
+    setComicView('editor');
+  };
+
+  const addEpisode = () => {
+    if (!requireComicAuth()) return;
+    if (!isBackendID(selectedWork?.id)) {
+      showToast('请先选择真实作品');
+      return;
+    }
+    runComicAction('add-episode', async () => {
+      const title = `第 ${(selectedWork?.episodes.length || 0) + 1} 话 · 新章节`;
+      const summary = '从小说文本拆解新一话的角色、场景、道具和页面。';
+      const payload = await authPostJSON(`/api/v1/manga/works/${selectedWork.id}/episodes`, session.token, { title, summary }, '新增一话失败');
+      if (payload?.episode) {
+        const remoteEpisode = normalizeComicEpisode(payload.episode);
+        setWorks((items) => items.map((work) => (work.id === selectedWorkID ? { ...work, episodes: [...work.episodes, remoteEpisode] } : work)));
+        setSelectedEpisodeID(remoteEpisode.id);
+        setSelectedComicPageID(remoteEpisode.pages[0]?.id || '');
+        setScriptBeats(remoteEpisode.pages[0]?.scriptBeats || []);
+        setPanels(remoteEpisode.pages[0]?.panels || []);
+        setComicView('pages');
+        showToast('已新增一话');
+      }
+    });
+  };
+
+  const createWork = () => {
+    if (!requireComicAuth()) return;
+    runComicAction('create-work', async () => {
+      const payload = await authPostJSON('/api/v1/manga/works', session.token, { title: '新漫画作品', subtitle: '未分类 / 草稿', cover: '' }, '创建作品失败');
+      if (payload?.work) {
+        const remoteWork = normalizeComicWork(payload.work);
+        setWorks((items) => [remoteWork, ...items]);
+        setSelectedWorkID(remoteWork.id);
+        setSelectedEpisodeID(remoteWork.episodes[0]?.id || '');
+        setSelectedComicPageID(remoteWork.episodes[0]?.pages[0]?.id || '');
+        setScriptBeats(remoteWork.episodes[0]?.pages[0]?.scriptBeats || []);
+        setPanels(remoteWork.episodes[0]?.pages[0]?.panels || []);
+        setComicView('episodes');
+        showToast('已创建新作品');
+      }
+    });
+  };
+
+  const saveCurrentPage = () => {
+    if (!session?.token || !isBackendID(selectedComicPage?.id)) {
+      showToast('请先创建真实漫画页面');
+      if (!session?.token) onAuthOpen?.();
+      return;
+    }
+    runComicAction('save-page', async () => {
+      const payload = await authPatchJSON(`/api/v1/manga/pages/${selectedComicPage.id}`, session.token, {
+        title: selectedComicPage.title,
+        thumb: selectedPanel?.src || selectedComicPage.thumb,
+        status: '已保存',
+        scriptBeats,
+        panels,
+      }, '保存草稿失败');
+      if (payload?.page) replacePageInWorks(payload.page);
+      showToast('草稿已保存');
+    });
+  };
+
+  const duplicateCurrentPage = (pageID = selectedComicPageID) => {
+    const sourceEpisode = selectedWork?.episodes.find((episode) => episode.pages.some((page) => page.id === pageID));
+    if (!sourceEpisode || !isBackendID(pageID)) return;
+    if (!requireComicAuth()) return;
+    runComicAction('duplicate-page', async () => {
+      const payload = await authPostJSON(`/api/v1/manga/pages/${pageID}/duplicate`, session.token, {}, '复制页面失败');
+      if (payload?.page) {
+        const remotePage = normalizeComicPage(payload.page);
+        setWorks((items) => items.map((work) => (work.id === selectedWorkID ? { ...work, episodes: work.episodes.map((episode) => (episode.id === sourceEpisode.id ? { ...episode, pages: [...episode.pages, remotePage] } : episode)) } : work)));
+        showToast('页面已复制');
+      }
+    });
+  };
+
+  const generateSelectedAsset = (replacePanel = false) => {
+    if (!selectedAsset || !requireComicAuth()) return;
+    runComicAction('generate-asset', async () => {
+      const assetIsRemote = isBackendID(selectedAsset.id);
+      const payload = await authPostJSON(assetIsRemote ? `/api/v1/studio/assets/${selectedAsset.id}/generate` : '/api/v1/manga/generate', session.token, {
+        workID: selectedWork?.id,
+        assetID: assetIsRemote ? selectedAsset.id : '',
+        type: selectedAsset.type,
+        title: selectedAsset.title,
+        prompt: selectedAsset.prompt || `${selectedAsset.title}，${selectedAsset.type}，黑白漫画资产，统一角色设定，高质量细节`,
+        size: '1024x1024',
+        quality: 'medium',
+        n: 1,
+      }, '生成资产失败');
+      if (payload?.user) onUserChange?.(payload.user);
+      if (payload?.asset) {
+        const nextAsset = normalizeComicAsset(payload.asset);
+        setAssets((items) => items.map((asset) => (asset.id === nextAsset.id ? nextAsset : asset)));
+        setSelectedAssetID(nextAsset.id);
+        if (replacePanel) applyAssetToPanel(nextAsset);
+      } else if (payload?.images?.[0]?.url && replacePanel) {
+        applyAssetToPanel({ ...selectedAsset, src: payload.images[0].thumbnailURL || payload.images[0].url });
+      }
+      showToast(`资产已生成，扣除 ${payload?.credits || 3} 积分`);
+    });
+  };
+
+  const exportComicPage = () => {
+    const html = `<!doctype html><meta charset="utf-8"><title>${selectedComicPage?.title || 'comic-page'}</title><style>body{margin:0;background:#111;display:grid;place-items:center;min-height:100vh}.page{width:720px;background:#fff;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:8px}.frame{position:relative;overflow:hidden;background:#000}.wide{grid-column:span 2}.frame img{width:100%;height:100%;object-fit:cover;display:block}.bubble{position:absolute;left:12px;top:12px;max-width:60%;background:#fff;border:2px solid #111;border-radius:12px;padding:8px;font:700 14px sans-serif}</style><main class="page">${panels.map((panel) => `<section class="frame ${panel.layout === 'wide' ? 'wide' : ''}"><img src="${panel.src || ''}" alt="">${panel.caption ? `<span class="bubble">${panel.caption}</span>` : ''}</section>`).join('')}</main>`;
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${selectedWork?.title || 'neo-ai-comic'}-${selectedComicPage?.title || 'page'}.html`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    showToast('漫画页已导出为 HTML，可用于预览或转 PDF');
+  };
+
+  const addScriptBeat = () => {
+    const nextBeat = {
+      id: `beat-${Date.now()}`,
+      title: `第 ${scriptBeats.length + 1} 格  新分镜`,
+      shot: '中景',
+      summary: '补充这一格的画面动作、人物位置和镜头信息。',
+      dialogue: '',
+      assets: [],
+    };
+    setScriptBeats((items) => [...items, nextBeat]);
+    setSelectedBeatID(nextBeat.id);
+    showToast('已添加一个待编辑分镜');
+  };
+
+  const toolItems = [
+    ['拆解脚本', WandSparkles],
+    ['资产库', ImageIcon],
+    ['组装页面', PanelsTopLeft],
+    ['对白气泡', MessageCircle],
+    ['样式/字体', Type],
+    ['我的收藏', Star],
+    ['设置', Settings],
+  ];
+  const favoriteAssets = assets.filter((asset) => asset.favorite);
+  const selectedPanelIndex = Math.max(0, panels.findIndex((panel) => panel.id === selectedPanelID));
+  const renderComicPreview = (src, label = '暂无图片') => (
+    src ? <img src={src} alt="" /> : (
+      <span className="comic-image-placeholder">
+        <ImageIcon size={22} />
+        <small>{label}</small>
+      </span>
+    )
+  );
+
+  const renderScriptPanel = () => (
+    <aside className="comic-script-panel">
+      <div className="comic-panel-heading">
+        <strong>分镜脚本</strong>
+        <button type="button" onClick={parseAgain} disabled={busyAction === 'parse-script'}>
+          {busyAction === 'parse-script' ? <LoaderCircle size={14} className="spin" /> : <RefreshCw size={14} />} 重新解析
+        </button>
+      </div>
+      <div className="comic-script-tabs">
+        {['故事线', '全文预览'].map((tab) => (
+          <button className={scriptTab === tab ? 'active' : ''} type="button" key={tab} onClick={() => setScriptTab(tab)}>{tab}</button>
+        ))}
+      </div>
+      <div className="comic-beat-list">
+        {scriptTab === '故事线' && scriptBeats.length === 0 ? (
+          <p className="comic-empty-state">还没有真实分镜。粘贴小说文本并点击拆书后，这里会显示后端生成的分镜。</p>
+        ) : scriptTab === '故事线' ? scriptBeats.map((beat) => (
+          <button className={beat.id === selectedBeatID ? 'active' : ''} type="button" key={beat.id} onClick={() => selectBeat(beat.id)}>
+            <span>
+              <strong>{beat.title}</strong>
+              <em>景别：{beat.shot}</em>
+            </span>
+            <small>{beat.summary}</small>
+            {beat.dialogue ? <i>对白：{beat.dialogue}</i> : <i>动作：无对白画面</i>}
+            <b>参考资产：{beat.assets.join('、')}</b>
+          </button>
+        )) : (
+          <article className="comic-script-preview">
+            <strong>{selectedEpisode?.title || '当前章节'}</strong>
+            <p>{scriptSourceText || '还没有真实分镜内容。'}</p>
+          </article>
+        )}
+      </div>
+      <button className="comic-add-beat" type="button" onClick={addScriptBeat}>
+        <Plus size={16} /> 新增分镜
+      </button>
+    </aside>
+  );
+
+  const renderCanvas = () => (
+    <main className="comic-canvas-zone">
+      <div className="comic-floating-tools" aria-label="画布工具">
+        {[Move, MousePointer2, ImagePlus, Type, MessageCircle].map((Icon, index) => (
+          <button className={index === 1 ? 'active' : ''} type="button" key={String(index)} onClick={() => {
+            if (index === 2) setActiveTool('资产库');
+            if (index === 3 || index === 4) setActiveTool('对白气泡');
+          }}>
+            <Icon size={18} />
+          </button>
+        ))}
+      </div>
+      <section className="comic-page-stage" style={{ '--comic-zoom': zoom / 100 }}>
+        <div className={`comic-page${panels.length === 0 ? ' empty' : ''}`}>
+          {panels.length === 0 ? (
+            <p className="comic-empty-state">当前页面还没有真实画格。先拆解脚本，或生成/保存画格后会出现在这里。</p>
+          ) : panels.map((panel, index) => (
+            <button
+              className={`comic-frame ${panel.layout} ${panel.id === selectedPanelID ? 'selected' : ''}`}
+              type="button"
+              key={panel.id}
+              onClick={() => selectPanel(panel.id)}
+            >
+              {renderComicPreview(panel.src, '空画格')}
+              {panel.caption ? <span className={`comic-bubble ${index === 0 ? 'caption' : ''}`}>{panel.caption}</span> : null}
+              <em>{index + 1}</em>
+            </button>
+          ))}
+        </div>
+      </section>
+      <div className="comic-zoom-tools">
+        <button type="button" onClick={() => setZoom((value) => Math.max(45, value - 6))}>-</button>
+        <span>{zoom}%</span>
+        <button type="button" onClick={() => setZoom((value) => Math.min(110, value + 6))}>+</button>
+      </div>
+    </main>
+  );
+
+  const renderAssetPanel = () => (
+    <aside className="comic-asset-panel">
+      <div className="comic-panel-heading">
+        <strong>资产库</strong>
+        <button type="button" onClick={() => setActiveTool('资产库')}>
+          <ImagePlus size={14} />
+        </button>
+      </div>
+      <div className="comic-asset-search">
+        <Search size={16} />
+        <input value={assetQuery} onChange={(event) => setAssetQuery(event.target.value)} placeholder="搜索资产（角色 / 场景 / 道具）" />
+        <button type="button" aria-label="筛选资产" onClick={() => setAssetTab((tab) => (tab === '收藏' ? '人物' : '收藏'))}><ChevronDown size={16} /></button>
+      </div>
+      <div className="comic-asset-tabs">
+        {['人物', '场景', '道具', '收藏'].map((tab) => (
+          <button className={assetTab === tab ? 'active' : ''} type="button" key={tab} onClick={() => setAssetTab(tab)}>
+            {tab}
+          </button>
+        ))}
+      </div>
+      <div className="comic-selected-inspector">
+        <strong>当前画格</strong>
+        <span>{selectedBeat.title} · {selectedBeat.shot}</span>
+        <textarea value={selectedPanel.caption} onChange={(event) => updatePanelCaption(event.target.value)} placeholder="输入对白或旁白" />
+      </div>
+      <div className="comic-asset-grid">
+        {visibleAssets.length === 0 ? (
+          <p className="comic-empty-state">还没有真实资产。拆书或生成资产后会出现在这里。</p>
+        ) : visibleAssets.map((asset) => (
+          <article className={`comic-asset-card${asset.id === selectedAssetID ? ' active' : ''}`} key={asset.id}>
+            <button type="button" onClick={() => setSelectedAssetID(asset.id)}>
+              {renderComicPreview(asset.src, '无图片')}
+            </button>
+            <button className="comic-asset-meta" type="button" onClick={() => setSelectedAssetID(asset.id)}>
+              <strong>{asset.title}</strong>
+              <span>{asset.type}</span>
+            </button>
+            <button className={asset.favorite ? 'favorite active' : 'favorite'} type="button" aria-label="收藏资产" onClick={() => toggleFavoriteAsset(asset.id)}>
+              <Star size={14} fill={asset.favorite ? 'currentColor' : 'none'} />
+            </button>
+          </article>
+        ))}
+      </div>
+      <div className="comic-asset-actions">
+        <button className="primary" type="button" onClick={() => applyAssetToPanel(selectedAsset)}>
+          <ImagePlus size={16} /> 拖入画格
+        </button>
+        <button type="button" onClick={() => generateSelectedAsset(true)} disabled={busyAction === 'generate-asset'}>
+          {busyAction === 'generate-asset' ? <LoaderCircle size={16} className="spin" /> : <RefreshCw size={16} />} 替换画面
+        </button>
+        <button type="button" onClick={() => selectedAsset && toggleFavoriteAsset(selectedAsset.id)}>
+          <Star size={16} /> 收藏
+        </button>
+      </div>
+    </aside>
+  );
+
+  const renderAssemblyWorkspace = () => (
+    <>
+      {renderScriptPanel()}
+      {renderCanvas()}
+      {renderAssetPanel()}
+    </>
+  );
+
+  const renderToolWorkspace = () => {
+    if (activeTool === '拆解脚本') {
+      return (
+        <main className="comic-tool-workspace">
+          <section className="comic-tool-main">
+            <header className="comic-tool-hero">
+              <span><WandSparkles size={18} /> Script Breakdown</span>
+              <strong>把小说文本拆成可生成的分镜、角色、场景和道具</strong>
+              <small>拆书会扣 3 积分。结果会写入当前页面，并把识别出的资产送入资产库。</small>
+            </header>
+            <label className="comic-large-input">
+              <span>小说文本</span>
+              <textarea value={novelDraft} onChange={(event) => setNovelDraft(event.target.value)} />
+            </label>
+            <div className="comic-tool-actions">
+              <button className="primary" type="button" onClick={() => {
+                if (!novelDraft.trim()) {
+                  showToast('请输入小说文本');
+                  return;
+                }
+                runComicAction('parse-script', async () => {
+                  const oldText = scriptSourceText;
+                  setScriptBeats((items) => items.map((beat, index) => (index === 0 ? { ...beat, summary: novelDraft.slice(0, 52) } : beat)));
+                  if (!requireComicAuth()) return;
+                  const payload = await authPostJSON('/api/v1/manga/script', session.token, {
+                    workID: selectedWork?.id,
+                    episodeID: selectedEpisode?.id,
+                    pageID: selectedComicPage?.id,
+                    text: novelDraft,
+                  }, '拆书失败');
+                  if (payload?.beats?.length) setScriptBeats(payload.beats);
+                  if (payload?.assets?.length) setAssets((items) => mergeComicAssets(items, payload.assets.map(normalizeComicAsset)));
+                  if (payload?.page) replacePageInWorks(payload.page);
+                  if (payload?.work) replaceWork(payload.work);
+                  if (payload?.user) onUserChange?.(payload.user);
+                  showToast(`拆书完成，扣除 ${payload?.credits || 3} 积分`);
+                  return oldText;
+                });
+              }}>
+                {busyAction === 'parse-script' ? <LoaderCircle size={16} className="spin" /> : <WandSparkles size={16} />} 开始拆书
+              </button>
+              <button type="button" onClick={addScriptBeat}><Plus size={16} /> 手动新增分镜</button>
+              <button type="button" onClick={() => navigator.clipboard?.writeText(scriptSourceText)}><Copy size={16} /> 复制分镜</button>
+            </div>
+            <div className="comic-breakdown-grid">
+              {scriptBeats.map((beat, index) => (
+                <article className={beat.id === selectedBeatID ? 'active' : ''} key={beat.id}>
+                  <button type="button" onClick={() => selectBeat(beat.id)}>{index + 1}</button>
+                  <div>
+                    <strong>{beat.title}</strong>
+                    <span>{beat.shot} · {beat.summary}</span>
+                    <small>{beat.assets.join(' / ')}</small>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+          <aside className="comic-tool-side">
+            <strong>拆解摘要</strong>
+            <div className="comic-stat-stack">
+              <span><b>{scriptBeats.length}</b> 分镜</span>
+              <span><b>{new Set(scriptBeats.flatMap((beat) => beat.assets)).size}</b> 参考资产</span>
+              <span><b>3</b> 积分/次</span>
+            </div>
+            <button type="button" onClick={() => setActiveTool('组装页面')}>进入组装页面</button>
+          </aside>
+        </main>
+      );
+    }
+    if (activeTool === '资产库') {
+      return (
+        <main className="comic-tool-workspace">
+          <section className="comic-tool-main">
+            <header className="comic-tool-hero compact">
+              <span><ImageIcon size={18} /> Asset Library</span>
+              <strong>统一管理角色、场景和道具，随时拖入画格复用</strong>
+            </header>
+            <div className="comic-library-toolbar">
+              <label><Search size={16} /><input value={assetQuery} onChange={(event) => setAssetQuery(event.target.value)} placeholder="搜索资产名称或提示词" /></label>
+              {['人物', '场景', '道具', '收藏'].map((tab) => (
+                <button className={assetTab === tab ? 'active' : ''} type="button" key={tab} onClick={() => setAssetTab(tab)}>{tab}</button>
+              ))}
+            </div>
+            <section className="comic-library-grid">
+              {visibleAssets.length === 0 ? (
+                <p className="comic-empty-state">还没有真实资产。完成拆书或点击生成资产后，后端保存的角色、场景和道具会显示在这里。</p>
+              ) : visibleAssets.map((asset) => (
+                <article className={asset.id === selectedAssetID ? 'active' : ''} key={asset.id}>
+                  <button type="button" onClick={() => setSelectedAssetID(asset.id)}>{renderComicPreview(asset.src, '无图片')}</button>
+                  <div>
+                    <strong>{asset.title}</strong>
+                    <span>{asset.type}</span>
+                  </div>
+                  <footer>
+                    <button type="button" onClick={() => applyAssetToPanel(asset)}>拖入</button>
+                    <button type="button" onClick={() => toggleFavoriteAsset(asset.id)}>{asset.favorite ? '已收藏' : '收藏'}</button>
+                  </footer>
+                </article>
+              ))}
+            </section>
+          </section>
+          <aside className="comic-tool-side">
+            <strong>{selectedAsset?.title || '选择资产'}</strong>
+            {selectedAsset ? <div className="comic-side-preview">{renderComicPreview(selectedAsset.src, '无图片')}</div> : <p className="comic-empty-state">请选择一个真实资产。</p>}
+            <label>资产提示词<textarea value={selectedAsset?.prompt || `${selectedAsset?.title || ''}，漫画资产设定`} onChange={(event) => {
+              const value = event.target.value;
+              setAssets((items) => items.map((asset) => (asset.id === selectedAssetID ? { ...asset, prompt: value } : asset)));
+            }} /></label>
+            <button className="primary" type="button" onClick={() => generateSelectedAsset(false)} disabled={busyAction === 'generate-asset'}>
+              {busyAction === 'generate-asset' ? '生成中...' : '生成/刷新资产（3 积分）'}
+            </button>
+            <button type="button" onClick={() => selectedAsset && applyAssetToPanel(selectedAsset)}>应用到当前画格</button>
+          </aside>
+        </main>
+      );
+    }
+    if (activeTool === '对白气泡') {
+      return (
+        <main className="comic-tool-workspace">
+          <section className="comic-tool-main">
+            <header className="comic-tool-hero compact">
+              <span><MessageCircle size={18} /> Dialogue</span>
+              <strong>集中编辑旁白、对白和气泡样式</strong>
+            </header>
+            <section className="comic-dialogue-list">
+              {panels.map((panel, index) => (
+                <article className={panel.id === selectedPanelID ? 'active' : ''} key={panel.id}>
+                  <button type="button" onClick={() => selectPanel(panel.id)}>第 {index + 1} 格</button>
+                  <textarea value={panel.caption} placeholder="输入对白、旁白或音效文字" onChange={(event) => {
+                    setSelectedPanelID(panel.id);
+                    setPanels((items) => items.map((item) => (item.id === panel.id ? { ...item, caption: event.target.value } : item)));
+                  }} />
+                </article>
+              ))}
+            </section>
+          </section>
+          <aside className="comic-tool-side">
+            <strong>气泡设置</strong>
+            <div className="comic-segment-group">
+              {['圆角气泡', '旁白框', '爆炸音效'].map((item) => (
+                <button className={bubbleShape === item ? 'active' : ''} type="button" key={item} onClick={() => setBubbleShape(item)}>{item}</button>
+              ))}
+            </div>
+            <label>当前画格<textarea value={selectedPanel?.caption || ''} onChange={(event) => updatePanelCaption(event.target.value)} /></label>
+            <button className="primary" type="button" onClick={saveCurrentPage}>保存对白</button>
+            <button type="button" onClick={() => setActiveTool('组装页面')}>回到画布预览</button>
+          </aside>
+        </main>
+      );
+    }
+    if (activeTool === '样式/字体') {
+      return (
+        <main className="comic-tool-workspace">
+          <section className="comic-tool-main">
+            <header className="comic-tool-hero compact">
+              <span><Type size={18} /> Style System</span>
+              <strong>控制页面规格、漫画调性、字体和画格模板</strong>
+            </header>
+            <div className="comic-style-board">
+              <label>页面尺寸<select value={pageSize} onChange={(event) => setPageSize(event.target.value)}><option>A4 竖版</option><option>Webtoon 长条</option><option>方形社媒页</option></select></label>
+              <label>分镜模板<select value={panelTemplate} onChange={(event) => setPanelTemplate(event.target.value)}><option>经典 6 格</option><option>动作 4 格</option><option>长镜头 3 格</option></select></label>
+              <label>字体<select value={letteringStyle} onChange={(event) => setLetteringStyle(event.target.value)}><option>黑体对白</option><option>手写漫画体</option><option>宋体旁白</option></select></label>
+              <label>画面调性<select value={pageTone} onChange={(event) => setPageTone(event.target.value)}><option>黑白高反差</option><option>网点灰阶</option><option>暗紫点缀</option></select></label>
+            </div>
+            <section className="comic-style-preview">
+              <div className="comic-page mini">
+                {panels.length === 0 ? (
+                  <p className="comic-empty-state">暂无真实画格</p>
+                ) : panels.slice(0, 4).map((panel, index) => (
+                  <span className={`comic-frame ${index === 0 ? 'wide' : ''}`} key={panel.id}>
+                    {renderComicPreview(panel.src, '空画格')}
+                    {panel.caption ? <b>{panel.caption}</b> : null}
+                  </span>
+                ))}
+              </div>
+            </section>
+          </section>
+          <aside className="comic-tool-side">
+            <strong>排版开关</strong>
+            <label className="comic-toggle-line"><input type="checkbox" checked={autoLayout} onChange={(event) => setAutoLayout(event.target.checked)} /> 自动排版</label>
+            <label className="comic-toggle-line"><input type="checkbox" checked={showPanelGuides} onChange={(event) => setShowPanelGuides(event.target.checked)} /> 显示画格参考线</label>
+            <button className="primary" type="button" onClick={() => showToast('样式已应用到当前页面')}>应用样式</button>
+            <button type="button" onClick={saveCurrentPage}>保存为页面默认</button>
+          </aside>
+        </main>
+      );
+    }
+    if (activeTool === '我的收藏') {
+      return (
+        <main className="comic-tool-workspace">
+          <section className="comic-tool-main">
+            <header className="comic-tool-hero compact">
+              <span><Star size={18} /> Favorites</span>
+              <strong>收藏的角色、场景、道具和可复用画面</strong>
+            </header>
+            <section className="comic-library-grid favorites">
+              {favoriteAssets.length > 0 ? favoriteAssets.map((asset) => (
+                <article key={asset.id}>
+                  <button type="button" onClick={() => setSelectedAssetID(asset.id)}>{renderComicPreview(asset.src, '无图片')}</button>
+                  <div><strong>{asset.title}</strong><span>{asset.type}</span></div>
+                  <footer><button type="button" onClick={() => applyAssetToPanel(asset)}>拖入</button><button type="button" onClick={() => toggleFavoriteAsset(asset.id)}>取消收藏</button></footer>
+                </article>
+              )) : <p className="comic-empty-state">还没有收藏资产。去资产库点星标，常用素材会出现在这里。</p>}
+            </section>
+          </section>
+          <aside className="comic-tool-side">
+            <strong>收藏统计</strong>
+            <div className="comic-stat-stack">
+              <span><b>{favoriteAssets.length}</b> 收藏资产</span>
+              <span><b>{favoriteAssets.filter((asset) => asset.type === '人物').length}</b> 人物</span>
+              <span><b>{favoriteAssets.filter((asset) => asset.type === '场景').length}</b> 场景</span>
+            </div>
+            <button type="button" onClick={() => { setAssetTab('收藏'); setActiveTool('资产库'); }}>管理收藏</button>
+          </aside>
+        </main>
+      );
+    }
+    return (
+      <main className="comic-tool-workspace">
+        <section className="comic-tool-main">
+          <header className="comic-tool-hero compact">
+            <span><Settings size={18} /> Studio Settings</span>
+            <strong>作品、生成、保存和导出设置</strong>
+          </header>
+          <div className="comic-settings-grid">
+            <label>作品名<input value={selectedWork?.title || ''} onChange={(event) => setWorks((items) => items.map((work) => (work.id === selectedWorkID ? { ...work, title: event.target.value } : work)))} /></label>
+            <label>当前章节<input value={selectedEpisode?.title || ''} onChange={(event) => setWorks((items) => items.map((work) => (work.id === selectedWorkID ? { ...work, episodes: work.episodes.map((episode) => (episode.id === selectedEpisodeID ? { ...episode, title: event.target.value } : episode)) } : work)))} /></label>
+            <label className="comic-toggle-line"><input type="checkbox" checked={autoSaveDraft} onChange={(event) => setAutoSaveDraft(event.target.checked)} /> 自动保存草稿</label>
+            <label className="comic-toggle-line"><input type="checkbox" checked={matureFilter} onChange={(event) => setMatureFilter(event.target.checked)} /> 开启安全过滤</label>
+          </div>
+          <section className="comic-settings-cards">
+            <article>
+              <strong>生成策略</strong>
+              <span>当前按画格或资产单张生成，每张扣 3 积分，失败自动退款。</span>
+              <button type="button" onClick={() => setActiveTool('资产库')}>管理生成资产</button>
+            </article>
+            <article>
+              <strong>页面输出</strong>
+              <span>导出当前漫画页为可预览 HTML，后续可接入 PNG/PDF 服务端渲染。</span>
+              <button type="button" onClick={exportComicPage}>导出当前页</button>
+            </article>
+            <article>
+              <strong>工作区偏好</strong>
+              <span>{pageSize} · {panelTemplate} · {pageTone}</span>
+              <button type="button" onClick={() => setActiveTool('样式/字体')}>调整样式</button>
+            </article>
+          </section>
+          <div className="comic-tool-actions">
+            <button className="primary" type="button" onClick={saveCurrentPage}>保存设置</button>
+            <button type="button" onClick={exportComicPage}><Download size={16} /> 导出当前页</button>
+            <button type="button" onClick={() => setQueue([])}>清空生成队列</button>
+          </div>
+        </section>
+        <aside className="comic-tool-side">
+          <strong>当前项目</strong>
+          <div className="comic-stat-stack">
+            <span><b>{selectedWork?.episodes.length || 0}</b> 话</span>
+            <span><b>{selectedEpisode?.pages.length || 0}</b> 页</span>
+            <span><b>{queue.length}</b> 队列任务</span>
+          </div>
+          <button type="button" onClick={() => setComicView('works')}>返回作品管理</button>
+        </aside>
+      </main>
+    );
+  };
+
+  const managerTitle = comicView === 'works'
+    ? '作品管理'
+    : comicView === 'episodes'
+      ? `${selectedWork?.title || '作品'} · 话数管理`
+      : `${selectedWork?.title || '作品'} · ${selectedEpisode?.title || '章节'} · 页面管理`;
+
+  if (comicView === 'works') {
+    return (
+      <div className="comic-studio-shell comic-manager-shell" role="dialog" aria-modal="true" aria-label="AI 漫画作品管理">
+        <header className="comic-topbar comic-manager-topbar">
+          <div className="comic-brand">
+            <img src="/assets/berserk-ai-icon.png" alt="" />
+            <strong>Neo AI</strong>
+            <span>AI 漫画</span>
+          </div>
+          <div className="comic-project-title">
+            <strong>{managerTitle}</strong>
+          </div>
+          <div className="comic-controls">
+            <button type="button" onClick={createWork}><Plus size={15} /> 新建作品</button>
+            <button type="button" onClick={() => showToast('作品排序已更新')}><RefreshCw size={15} /> 最近更新</button>
+            <button className="comic-close" type="button" aria-label="关闭 AI 漫画" onClick={onClose}><X size={18} /></button>
+          </div>
+        </header>
+        <main className="comic-manager-page">
+          <section className="comic-manager-hero">
+            <div>
+              <strong>作品管理</strong>
+              <span>每个作品可以包含 N 话，每一话可以继续管理 N 页漫画页面。</span>
+            </div>
+            <label>
+              <Search size={16} />
+              <input placeholder="搜索作品、角色或章节" />
+            </label>
+          </section>
+          <section className="comic-work-grid">
+            {!session?.token ? (
+              <div className="comic-manager-empty">
+                <strong>登录后查看真实漫画作品</strong>
+                <span>AI 漫画作品、章节、页面和资产都来自后端账户数据。</span>
+                <button type="button" onClick={onAuthOpen}>登录 Neo AI</button>
+              </div>
+            ) : comicLoading ? (
+              <div className="comic-manager-empty">
+                <LoaderCircle size={24} className="spin" />
+                <strong>正在加载真实作品</strong>
+              </div>
+            ) : works.length === 0 ? (
+              <div className="comic-manager-empty">
+                <strong>还没有漫画作品</strong>
+                <span>创建第一个作品后，后端保存的数据会显示在这里。</span>
+                <button type="button" onClick={createWork}>新建作品</button>
+              </div>
+            ) : works.map((work) => {
+              const pageCount = work.episodes.reduce((count, episode) => count + episode.pages.length, 0);
+              return (
+                <article className="comic-work-card" key={work.id}>
+                  <button type="button" onClick={() => openWork(work.id)}>
+                    {renderComicPreview(work.cover, '无封面')}
+                  </button>
+                  <div>
+                    <strong>{work.title}</strong>
+                    <span>{work.subtitle}</span>
+                    <small>{work.episodes.length} 话 · {pageCount} 页 · {work.updatedAt}</small>
+                  </div>
+                  <footer>
+                    <button type="button" onClick={() => openWork(work.id)}>管理话数</button>
+                    <button type="button" onClick={() => {
+                      setSelectedWorkID(work.id);
+                      setSelectedEpisodeID(work.episodes[0]?.id || '');
+                      applyPageState(work.episodes[0]?.pages[0]);
+                      setComicView('editor');
+                    }}>继续编辑</button>
+                  </footer>
+                </article>
+              );
+            })}
+          </section>
+        </main>
+        {toast ? <div className="comic-toast">{toast}</div> : null}
+      </div>
+    );
+  }
+
+  if (comicView === 'episodes' || comicView === 'pages') {
+    const pageMode = comicView === 'pages';
+    return (
+      <div className="comic-studio-shell comic-manager-shell" role="dialog" aria-modal="true" aria-label="AI 漫画章节管理">
+        <header className="comic-topbar comic-manager-topbar">
+          <div className="comic-brand">
+            <img src="/assets/berserk-ai-icon.png" alt="" />
+            <strong>Neo AI</strong>
+            <span>AI 漫画</span>
+          </div>
+          <button className="comic-back" type="button" onClick={() => setComicView(pageMode ? 'episodes' : 'works')}>
+            <ChevronLeft size={16} /> {pageMode ? '返回话数' : '返回作品'}
+          </button>
+          <div className="comic-project-title">
+            <strong>{managerTitle}</strong>
+          </div>
+          <div className="comic-controls">
+            {pageMode ? (
+              <button type="button" onClick={addPage}><Plus size={15} /> 新增页面</button>
+            ) : (
+              <button type="button" onClick={addEpisode}><Plus size={15} /> 新增一话</button>
+            )}
+            <button className="primary" type="button" onClick={() => setComicView('editor')}><PanelsTopLeft size={15} /> 打开编辑器</button>
+            <button className="comic-close" type="button" aria-label="关闭 AI 漫画" onClick={onClose}><X size={18} /></button>
+          </div>
+        </header>
+        <main className="comic-manager-page">
+          {!pageMode ? (
+            <section className="comic-episode-list">
+              {selectedWork?.episodes.length ? selectedWork.episodes.map((episode) => (
+                <article className={episode.id === selectedEpisodeID ? 'active' : ''} key={episode.id}>
+                  <button type="button" onClick={() => openEpisode(episode.id)}>
+                    {renderComicPreview(episode.pages[0]?.thumb || selectedWork.cover, '无封面')}
+                  </button>
+                  <div>
+                    <strong>{episode.title}</strong>
+                    <span>{episode.summary}</span>
+                    <small>{episode.pages.length} 页 · {episode.status}</small>
+                  </div>
+                  <footer>
+                    <button type="button" onClick={() => openEpisode(episode.id)}>管理页面</button>
+                    <button type="button" onClick={() => {
+                      setSelectedEpisodeID(episode.id);
+                      applyPageState(episode.pages[0]);
+                      setComicView('editor');
+                    }}>编辑本话</button>
+                  </footer>
+                </article>
+              )) : (
+                <div className="comic-manager-empty">
+                  <strong>还没有真实话数</strong>
+                  <span>新增一话后会写入后端并显示在这里。</span>
+                  <button type="button" onClick={addEpisode}>新增一话</button>
+                </div>
+              )}
+            </section>
+          ) : (
+            <section className="comic-page-manager-grid">
+              {selectedEpisode?.pages.map((page, index) => (
+                <article className={page.id === selectedComicPageID ? 'active' : ''} key={page.id}>
+                  <button type="button" onClick={() => openPage(page.id)}>
+                    {renderComicPreview(page.thumb, '空白页')}
+                    <em>{index + 1}</em>
+                  </button>
+                  <div>
+                    <strong>{page.title}</strong>
+                    <span>{page.status}</span>
+                  </div>
+                  <footer>
+                    <button type="button" onClick={() => openPage(page.id)}>编辑页面</button>
+                    <button type="button" onClick={() => duplicateCurrentPage(page.id)}>复制</button>
+                  </footer>
+                </article>
+              ))}
+              {!selectedEpisode?.pages.length ? (
+                <div className="comic-manager-empty">
+                  <strong>还没有真实页面</strong>
+                  <span>新增页面后会保存到后端。</span>
+                </div>
+              ) : null}
+              <button className="comic-page-create-card" type="button" onClick={addPage}>
+                <Plus size={24} />
+                新增页面
+              </button>
+            </section>
+          )}
+        </main>
+        {toast ? <div className="comic-toast">{toast}</div> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="comic-studio-shell" role="dialog" aria-modal="true" aria-label="AI 漫画工作台">
+      <header className="comic-topbar">
+        <div className="comic-brand">
+          <img src="/assets/berserk-ai-icon.png" alt="" />
+          <strong>Neo AI</strong>
+          <span>AI 漫画</span>
+        </div>
+        <button className="comic-back" type="button" onClick={() => setComicView('pages')}>
+          <ChevronLeft size={16} /> 返回页面
+        </button>
+        <div className="comic-project-title">
+          <strong>《{selectedWork?.title || '漫画作品'}》{selectedEpisode?.title || '当前话'} · {selectedComicPage?.title || '当前页'}</strong>
+          <button type="button" aria-label="编辑项目名"><Brush size={14} /></button>
+        </div>
+        <div className="comic-controls">
+          <label>
+            页面尺寸
+            <select value={pageSize} onChange={(event) => setPageSize(event.target.value)}>
+              <option>A4 竖版</option>
+              <option>Webtoon 长条</option>
+              <option>方形社媒页</option>
+            </select>
+          </label>
+          <label>
+            分镜模板
+            <select value={panelTemplate} onChange={(event) => setPanelTemplate(event.target.value)}>
+              <option>经典 6 格</option>
+              <option>动作 4 格</option>
+              <option>长镜头 3 格</option>
+            </select>
+          </label>
+          <button className={autoLayout ? 'active' : ''} type="button" onClick={() => setAutoLayout((value) => !value)}>
+            <PanelTop size={15} /> 自动排版
+          </button>
+          <button type="button" onClick={regeneratePanel} disabled={busyAction === 'generate-panel'}>
+            {busyAction === 'generate-panel' ? <LoaderCircle size={15} className="spin" /> : <WandSparkles size={15} />} 生成所选画格
+          </button>
+          <button type="button" onClick={exportComicPage}>
+            <Download size={15} /> 导出页面
+          </button>
+          <button className="primary" type="button" onClick={saveCurrentPage} disabled={busyAction === 'save-page'}>
+            {busyAction === 'save-page' ? <LoaderCircle size={15} className="spin" /> : <ShieldCheck size={15} />} 保存草稿
+          </button>
+          <button className="comic-close" type="button" aria-label="关闭 AI 漫画" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </div>
+      </header>
+
+      <aside className="comic-left-rail" aria-label="漫画工具">
+        {toolItems.map(([label, Icon]) => (
+          <button className={activeTool === label ? 'active' : ''} type="button" key={label} title={label} onClick={() => {
+            setActiveTool(label);
+            if (label === '我的收藏') setAssetTab('收藏');
+          }}>
+            <Icon size={19} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </aside>
+
+      {activeTool === '组装页面' ? renderAssemblyWorkspace() : renderToolWorkspace()}
+
+      <footer className="comic-bottom-bar">
+        <div className="comic-page-strip">
+          <button type="button" onClick={() => setComicView('pages')}>页面管理 <ChevronDown size={14} /></button>
+          {selectedEpisode?.pages.map((page) => (
+            <button className={selectedComicPageID === page.id ? 'active' : ''} type="button" key={page.id} onClick={() => openPage(page.id)}>
+              {renderComicPreview(page.thumb, '空白页')}
+              <span>{page.title}</span>
+            </button>
+          ))}
+          <button className="comic-new-page" type="button" onClick={addPage}>
+            <Plus size={18} /> 新建页面
+          </button>
+        </div>
+        <div className="comic-queue">
+          <header>
+            <strong>生成队列</strong>
+            <span>{queue.length}</span>
+            <button type="button" onClick={() => setQueue([])}>清空队列</button>
+          </header>
+          <div>
+            {queue.map((item) => (
+              <article key={item.id}>
+                {renderComicPreview(item.src, '任务')}
+                <span>
+                  <strong>{item.title}</strong>
+                  <small>{item.subtitle}</small>
+                  <em>{item.status}{item.progress > 0 ? ` ${item.progress}%` : ''}</em>
+                  {item.progress > 0 ? <i style={{ width: `${item.progress}%` }} /> : null}
+                </span>
+                <button type="button" onClick={() => setQueue((items) => items.filter((candidate) => candidate.id !== item.id))}>
+                  <X size={14} />
+                </button>
+              </article>
+            ))}
+          </div>
+        </div>
+      </footer>
+      {toast ? <div className="comic-toast">{toast}</div> : null}
+    </div>
+  );
+}
+
 function AppModal({ title, message, tone = 'info', onClose }) {
   useEscape(onClose);
   return (
@@ -1881,150 +3130,71 @@ function AppModal({ title, message, tone = 'info', onClose }) {
 }
 
 function SizeEditorModal({ onClose }) {
-  const presets = [
-    { label: '竖版 3:4', width: 1024, height: 1360 },
-    { label: '头像 1:1', width: 1024, height: 1024 },
-    { label: '海报 4:5', width: 1024, height: 1280 },
-    { label: '壁纸 16:9', width: 1792, height: 1024 },
-    { label: '长图 9:16', width: 1024, height: 1792 },
+  const outputFormats = [
+    { label: 'PNG', value: 'png', mime: 'image/png', extension: 'png' },
+    { label: 'JPG', value: 'jpg', mime: 'image/jpeg', extension: 'jpg', quality: 0.92 },
+    { label: 'WebP', value: 'webp', mime: 'image/webp', extension: 'webp', quality: 0.9 },
   ];
   const [imageSrc, setImageSrc] = useState('');
   const [imageName, setImageName] = useState('');
-  const [targetWidth, setTargetWidth] = useState(1024);
-  const [targetHeight, setTargetHeight] = useState(1360);
-  const [widthInput, setWidthInput] = useState('1024');
-  const [heightInput, setHeightInput] = useState('1360');
-  const [crop, setCrop] = useState({ x: 15, y: 10, w: 70, h: 70 });
+  const [originalSize, setOriginalSize] = useState({ width: 0, height: 0 });
+  const [widthInput, setWidthInput] = useState('');
+  const [heightInput, setHeightInput] = useState('');
+  const [aspectLocked, setAspectLocked] = useState(true);
+  const [outputFormat, setOutputFormat] = useState('png');
   const [message, setMessage] = useState('');
   const imageRef = useRef(null);
-  const dragRef = useRef(null);
-  const activeDimensionInputRef = useRef('');
 
   useEscape(onClose);
 
-  const cropToInputSize = (nextCrop = crop) => {
-    const image = imageRef.current;
-    if (!image?.naturalWidth || !image?.naturalHeight) {
-      return { width: targetWidth, height: targetHeight };
+  const originalRatio = originalSize.width > 0 && originalSize.height > 0 ? originalSize.width / originalSize.height : 1;
+  const selectedFormat = outputFormats.find((format) => format.value === outputFormat) || outputFormats[0];
+  const outputWidth = clampDimensionInput(widthInput, originalSize.width || 1024);
+  const outputHeight = clampDimensionInput(heightInput, originalSize.height || 1024);
+
+  const setLinkedSize = (dimension, value) => {
+    const cleanValue = value.replace(/[^\d]/g, '');
+    if (dimension === 'width') {
+      setWidthInput(cleanValue);
+      if (aspectLocked && cleanValue && originalRatio > 0) {
+        setHeightInput(String(Math.max(1, Math.round(Number(cleanValue) / originalRatio))));
+      }
+      return;
     }
-    return {
-      width: Math.max(1, Math.round((nextCrop.w / 100) * image.naturalWidth)),
-      height: Math.max(1, Math.round((nextCrop.h / 100) * image.naturalHeight)),
-    };
+    setHeightInput(cleanValue);
+    if (aspectLocked && cleanValue && originalRatio > 0) {
+      setWidthInput(String(Math.max(1, Math.round(Number(cleanValue) * originalRatio))));
+    }
   };
 
-  const fitSizeToImage = (width, height) => {
-    const image = imageRef.current;
-    if (!image?.naturalWidth || !image?.naturalHeight) {
-      return { width, height };
-    }
-    const ratio = Math.max(0.01, width / height);
-    let nextWidth = Math.min(width, image.naturalWidth);
-    let nextHeight = Math.round(nextWidth / ratio);
-    if (nextHeight > image.naturalHeight) {
-      nextHeight = image.naturalHeight;
-      nextWidth = Math.round(nextHeight * ratio);
-    }
-    return {
-      width: Math.max(1, Math.min(image.naturalWidth, nextWidth)),
-      height: Math.max(1, Math.min(image.naturalHeight, nextHeight)),
-    };
-  };
-
-  const applyPixelCrop = (width, height, options = {}) => {
-    const image = imageRef.current;
-    if (!image?.naturalWidth || !image?.naturalHeight) return;
-    const nextWidth = Math.max(1, Math.min(image.naturalWidth, Math.round(width)));
-    const nextHeight = Math.max(1, Math.min(image.naturalHeight, Math.round(height)));
-    setCrop((current) => {
-      const nextW = (nextWidth / image.naturalWidth) * 100;
-      const nextH = (nextHeight / image.naturalHeight) * 100;
-      const keepPosition = options.keepPosition === true;
-      return {
-        x: keepPosition ? clamp(current.x, 0, 100 - nextW) : (100 - nextW) / 2,
-        y: keepPosition ? clamp(current.y, 0, 100 - nextH) : (100 - nextH) / 2,
-        w: nextW,
-        h: nextH,
-      };
+  const toggleAspectLock = () => {
+    setAspectLocked((locked) => {
+      if (!locked && originalRatio > 0 && widthInput) {
+        setHeightInput(String(Math.max(1, Math.round(Number(widthInput) / originalRatio))));
+      }
+      return !locked;
     });
-    setWidthInput(String(nextWidth));
-    setHeightInput(String(nextHeight));
   };
-
-  const resetCrop = () => {
-    const fitted = fitSizeToImage(targetWidth, targetHeight);
-    applyPixelCrop(fitted.width, fitted.height);
-  };
-
-  const syncInputsToCrop = (nextCrop = crop) => {
-    if (activeDimensionInputRef.current) return;
-    const size = cropToInputSize(nextCrop);
-    setWidthInput(String(size.width));
-    setHeightInput(String(size.height));
-  };
-
-  const applyPreset = (preset) => {
-    setTargetWidth(preset.width);
-    setTargetHeight(preset.height);
-    if (!imageRef.current?.naturalWidth || !imageRef.current?.naturalHeight) {
-      setWidthInput(String(preset.width));
-      setHeightInput(String(preset.height));
-      return;
-    }
-    const fitted = fitSizeToImage(preset.width, preset.height);
-    applyPixelCrop(fitted.width, fitted.height);
-  };
-
-  const commitInputSize = () => {
-    activeDimensionInputRef.current = '';
-    const currentSize = cropToInputSize();
-    const width = clampDimensionInput(widthInput, currentSize.width);
-    const height = clampDimensionInput(heightInput, currentSize.height);
-    setTargetWidth(width);
-    setTargetHeight(height);
-    if (!imageRef.current?.naturalWidth || !imageRef.current?.naturalHeight) {
-      setWidthInput(String(width));
-      setHeightInput(String(height));
-      return;
-    }
-    applyPixelCrop(width, height, { keepPosition: true });
-  };
-
-  useEffect(() => {
-    if (imageSrc) resetCrop();
-  }, [targetWidth, targetHeight, imageSrc]);
-
-  useEffect(() => {
-    syncInputsToCrop();
-  }, [crop, imageSrc]);
-
-  useEffect(() => {
-    const handleMove = (event) => {
-      if (!dragRef.current || !imageRef.current) return;
-      const rect = imageRef.current.getBoundingClientRect();
-      const dx = ((event.clientX - dragRef.current.startX) / rect.width) * 100;
-      const dy = ((event.clientY - dragRef.current.startY) / rect.height) * 100;
-      setCrop(() => resizeCrop(dragRef.current.crop, dx, dy, dragRef.current.mode));
-    };
-    const handleUp = () => {
-      dragRef.current = null;
-    };
-    window.addEventListener('pointermove', handleMove);
-    window.addEventListener('pointerup', handleUp);
-    return () => {
-      window.removeEventListener('pointermove', handleMove);
-      window.removeEventListener('pointerup', handleUp);
-    };
-  }, []);
 
   const handleFile = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
     setImageName(file.name);
     setMessage('');
+    setOriginalSize({ width: 0, height: 0 });
+    setWidthInput('');
+    setHeightInput('');
     const reader = new FileReader();
     reader.onload = () => setImageSrc(String(reader.result || ''));
     reader.readAsDataURL(file);
+  };
+
+  const handleImageLoad = (event) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    if (!naturalWidth || !naturalHeight) return;
+    setOriginalSize({ width: naturalWidth, height: naturalHeight });
+    setWidthInput(String(naturalWidth));
+    setHeightInput(String(naturalHeight));
   };
 
   const exportImage = () => {
@@ -2033,129 +3203,108 @@ function SizeEditorModal({ onClose }) {
       setMessage('请先上传图片。');
       return;
     }
-    const cropSize = cropToInputSize();
-    const outputWidth = clampDimensionInput(widthInput, cropSize.width);
-    const outputHeight = clampDimensionInput(heightInput, cropSize.height);
     const canvas = document.createElement('canvas');
     canvas.width = outputWidth;
     canvas.height = outputHeight;
     const context = canvas.getContext('2d');
-    const sx = (crop.x / 100) * image.naturalWidth;
-    const sy = (crop.y / 100) * image.naturalHeight;
-    const sw = (crop.w / 100) * image.naturalWidth;
-    const sh = (crop.h / 100) * image.naturalHeight;
-    context.drawImage(image, sx, sy, sw, sh, 0, 0, outputWidth, outputHeight);
+    if (!context) {
+      setMessage('导出失败，请换个浏览器重试。');
+      return;
+    }
+    if (selectedFormat.mime === 'image/jpeg') {
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, outputWidth, outputHeight);
+    }
+    context.drawImage(image, 0, 0, outputWidth, outputHeight);
     const link = document.createElement('a');
-    link.download = `berserk-${outputWidth}x${outputHeight}.png`;
-    link.href = canvas.toDataURL('image/png');
+    link.download = `neo-ai-${outputWidth}x${outputHeight}.${selectedFormat.extension}`;
+    link.href = canvas.toDataURL(selectedFormat.mime, selectedFormat.quality);
     link.click();
-    setMessage('已导出指定尺寸图片。');
+    setMessage(`已导出 ${outputWidth} x ${outputHeight} 的 ${selectedFormat.label} 图片。`);
   };
 
   return (
-    <div className="size-editor-overlay" role="dialog" aria-modal="true" aria-label="尺寸修改器" onMouseDown={onClose}>
+    <div className="size-editor-overlay" role="dialog" aria-modal="true" aria-label="格式/尺寸修改器" onMouseDown={onClose}>
       <div className="size-editor" onMouseDown={(event) => event.stopPropagation()}>
-        <button className="size-editor-close" type="button" aria-label="关闭尺寸修改器" onClick={onClose}>
+        <button className="size-editor-close" type="button" aria-label="关闭格式/尺寸修改器" onClick={onClose}>
           <X size={18} />
         </button>
         <header>
-          <strong>尺寸修改器</strong>
-          <span>上传图片，选择目标尺寸后拖动裁切框。</span>
+          <strong>格式/尺寸修改器</strong>
+          <span>上传图片后选择导出格式，并输入指定宽高。</span>
         </header>
         <section className="size-editor-body">
           <aside>
-            <label className="size-upload">
-              <ImageIcon size={20} />
-              <span>{imageName || '选择本地图片'}</span>
-              <input type="file" accept="image/*" onChange={handleFile} />
-            </label>
-            <div className="size-presets">
-              {presets.map((preset) => (
-                <button
-                  className={targetWidth === preset.width && targetHeight === preset.height ? 'active' : ''}
-                  type="button"
-                  key={preset.label}
-                  onClick={() => applyPreset(preset)}
-                >
-                  <span>{preset.label}</span>
-                  <small>{preset.width} x {preset.height}</small>
+            <div className="size-editor-controls">
+              <label className="size-upload">
+                <ImageIcon size={20} />
+                <span>{imageName || '选择本地图片'}</span>
+                <input type="file" accept="image/*" onChange={handleFile} />
+              </label>
+              {originalSize.width > 0 ? (
+                <div className="size-original-size">
+                  <span>原图尺寸</span>
+                  <strong>{originalSize.width} x {originalSize.height}</strong>
+                </div>
+              ) : null}
+              <span className="size-section-label">导出格式</span>
+              <div className="size-format-grid" aria-label="导出格式">
+                {outputFormats.map((format) => (
+                  <button
+                    className={outputFormat === format.value ? 'active' : ''}
+                    type="button"
+                    key={format.value}
+                    onClick={() => setOutputFormat(format.value)}
+                  >
+                    {format.label}
+                  </button>
+                ))}
+              </div>
+              <span className="size-section-label">指定尺寸</span>
+              <div className="size-inputs">
+                <label>
+                  宽度
+                  <input
+                    inputMode="numeric"
+                    value={widthInput}
+                    placeholder="宽度"
+                    onChange={(event) => setLinkedSize('width', event.target.value)}
+                  />
+                </label>
+                <label>
+                  高度
+                  <input
+                    inputMode="numeric"
+                    value={heightInput}
+                    placeholder="高度"
+                    onChange={(event) => setLinkedSize('height', event.target.value)}
+                  />
+                </label>
+                <button className={`size-lock-button${aspectLocked ? ' locked' : ''}`} type="button" onClick={toggleAspectLock} aria-pressed={aspectLocked} aria-label={aspectLocked ? '解除比例锁定' : '锁定原图比例'}>
+                  {aspectLocked ? <Lock size={15} /> : <Unlock size={15} />}
+                  <span>{aspectLocked ? '按原图比例锁定' : '已解除比例锁定'}</span>
                 </button>
-              ))}
-            </div>
-            <div className="size-inputs">
-              <label>
-                宽度
-                <input
-                  inputMode="numeric"
-                  value={widthInput}
-                  onFocus={() => {
-                    activeDimensionInputRef.current = 'width';
-                  }}
-                  onChange={(event) => {
-                    activeDimensionInputRef.current = 'width';
-                    setWidthInput(event.target.value.replace(/[^\d]/g, ''));
-                  }}
-                  onBlur={commitInputSize}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') event.currentTarget.blur();
-                  }}
-                />
-              </label>
-              <label>
-                高度
-                <input
-                  inputMode="numeric"
-                  value={heightInput}
-                  onFocus={() => {
-                    activeDimensionInputRef.current = 'height';
-                  }}
-                  onChange={(event) => {
-                    activeDimensionInputRef.current = 'height';
-                    setHeightInput(event.target.value.replace(/[^\d]/g, ''));
-                  }}
-                  onBlur={commitInputSize}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') event.currentTarget.blur();
-                  }}
-                />
-              </label>
+                <span className="size-lock-status">
+                  {aspectLocked ? '按原图比例锁定' : '已解除比例锁定'}
+                </span>
+              </div>
+              {message ? <p>{message}</p> : null}
             </div>
             <button className="size-export" type="button" onClick={exportImage}>
-              <Download size={17} /> 导出图片
+              <Download size={17} /> 导出 {selectedFormat.label}
             </button>
-            {message ? <p>{message}</p> : null}
           </aside>
           <div className="size-crop-area">
             {imageSrc ? (
               <div className="size-image-wrap">
-                <img ref={imageRef} src={imageSrc} alt="" onLoad={resetCrop} draggable={false} />
-                <div
-                  className="crop-frame"
-                  style={{ left: `${crop.x}%`, top: `${crop.y}%`, width: `${crop.w}%`, height: `${crop.h}%` }}
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    dragRef.current = { startX: event.clientX, startY: event.clientY, crop, mode: 'move' };
-                  }}
-                  >
-                  <span className="crop-size-label">{cropToInputSize().width} x {cropToInputSize().height}</span>
-                  {['nw', 'ne', 'se', 'sw'].map((mode) => (
-                    <span
-                      key={mode}
-                      className={`crop-handle ${mode}`}
-                      onPointerDown={(event) => {
-                        event.stopPropagation();
-                        event.preventDefault();
-                        dragRef.current = { startX: event.clientX, startY: event.clientY, crop, mode };
-                      }}
-                    />
-                  ))}
-                </div>
+                <img ref={imageRef} src={imageSrc} alt="" onLoad={handleImageLoad} draggable={false} />
+                <span className="crop-size-label">{outputWidth} x {outputHeight} · {selectedFormat.label}</span>
               </div>
             ) : (
               <div className="size-empty">
                 <ImageIcon size={34} />
-                <strong>上传图片后开始裁切</strong>
-                <span>目标尺寸确定后，裁切框会按照比例显示。</span>
+                <strong>上传图片后开始转换</strong>
+                <span>选择 PNG、JPG 或 WebP，并输入要导出的宽高。</span>
               </div>
             )}
           </div>
@@ -2169,6 +3318,7 @@ function AuthModal({ onClose, onSuccess }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState('');
@@ -2179,13 +3329,20 @@ function AuthModal({ onClose, onSuccess }) {
   const cleanEmail = email.trim().toLowerCase();
   const isRegister = mode === 'register';
   const isCodeLogin = mode === 'login-code';
-  const needsCode = isRegister || isCodeLogin;
-  const title = isRegister ? '注册 BerserkAI' : '欢迎来到 BerserkAI';
-  const subtitle = isRegister ? '注册后即可保存你的创作记录' : '登录后同步保存你的灵感与作品';
+  const isResetPassword = mode === 'reset-password';
+  const needsCode = isRegister || isCodeLogin || isResetPassword;
+  const title = isRegister ? '注册 Neo AI' : isResetPassword ? '重置登录密码' : '欢迎来到 Neo AI';
+  const subtitle = isRegister ? '注册后即可保存你的创作记录' : isResetPassword ? '用邮箱验证码确认身份后设置新密码' : '登录后同步保存你的灵感与作品';
   const canRequestCode = Boolean(cleanEmail) && (!isRegister || password.trim().length >= 8);
   const canSubmit =
     cleanEmail &&
-    (isCodeLogin ? code.trim().length === 6 : isRegister ? password.trim().length >= 8 && code.trim().length === 6 : Boolean(password.trim()));
+    (isCodeLogin
+      ? code.trim().length === 6
+      : isResetPassword
+        ? password.trim().length >= 8 && confirmPassword.trim().length >= 8 && code.trim().length === 6
+        : isRegister
+          ? password.trim().length >= 8 && code.trim().length === 6
+          : Boolean(password.trim()));
 
   useEscape(onClose);
 
@@ -2208,6 +3365,7 @@ function AuthModal({ onClose, onSuccess }) {
   const switchMode = (nextMode) => {
     setMode(nextMode);
     setPassword('');
+    setConfirmPassword('');
     resetTransientState();
   };
 
@@ -2216,7 +3374,7 @@ function AuthModal({ onClose, onSuccess }) {
     setStatusMessage('');
     setIsSendingCode(true);
     try {
-      const result = await requestEmailCode({ email: cleanEmail, mode: isRegister ? 'register' : 'login' });
+      const result = await requestEmailCode({ email: cleanEmail, mode: isRegister ? 'register' : isResetPassword ? 'reset' : 'login' });
       setCountdown(result?.expiresIn || 90);
       setCodeSent(true);
       setStatusMessage(`验证码已发送到 ${cleanEmail}。`);
@@ -2231,16 +3389,26 @@ function AuthModal({ onClose, onSuccess }) {
     event.preventDefault();
     setError('');
     setStatusMessage('');
+    if (isResetPassword && password !== confirmPassword) {
+      setError('两次输入的新密码不一致。');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const session = isRegister
-        ? await registerWithEmail({ email: cleanEmail, password, code })
-        : isCodeLogin
-          ? await loginWithEmailCode({ email: cleanEmail, code })
-          : await loginWithPassword({ email: cleanEmail, password });
+      let session;
+      if (isRegister) {
+        session = await registerWithEmail({ email: cleanEmail, password, code });
+      } else if (isCodeLogin) {
+        session = await loginWithEmailCode({ email: cleanEmail, code });
+      } else if (isResetPassword) {
+        const verification = await verifyEmailCode({ email: cleanEmail, code, mode: 'reset' });
+        session = await resetEmailPassword({ email: cleanEmail, password, setupToken: verification.setupToken });
+      } else {
+        session = await loginWithPassword({ email: cleanEmail, password });
+      }
       onSuccess(session);
     } catch (submitError) {
-      setError(getErrorMessage(submitError, isRegister ? '注册失败' : '登录失败'));
+      setError(getErrorMessage(submitError, isRegister ? '注册失败' : isResetPassword ? '重置密码失败' : '登录失败'));
     } finally {
       setIsSubmitting(false);
     }
@@ -2255,7 +3423,7 @@ function AuthModal({ onClose, onSuccess }) {
         <div className="auth-panel">
           <div className="auth-mark">
             <img src="/assets/berserk-ai-icon.png" alt="" />
-            <span>BERSERK AI</span>
+            <span>NEO AI</span>
           </div>
           <h2>{title}</h2>
           <p>{subtitle}</p>
@@ -2280,8 +3448,18 @@ function AuthModal({ onClose, onSuccess }) {
                   setPassword(event.target.value);
                   if (isRegister) resetTransientState();
                 }}
-                placeholder={isRegister ? '设置登录密码（至少 8 位）' : '登录密码'}
-                autoComplete={isRegister ? 'new-password' : 'current-password'}
+                placeholder={isRegister || isResetPassword ? '设置登录密码（至少 8 位）' : '登录密码'}
+                autoComplete={isRegister || isResetPassword ? 'new-password' : 'current-password'}
+                required
+              />
+            ) : null}
+            {isResetPassword ? (
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="再次输入新密码"
+                autoComplete="new-password"
                 required
               />
             ) : null}
@@ -2307,9 +3485,19 @@ function AuthModal({ onClose, onSuccess }) {
                 使用邮箱验证码登录
               </button>
             ) : null}
+            {mode === 'login' ? (
+              <button className="auth-switch" type="button" onClick={() => switchMode('reset-password')}>
+                忘记密码？用邮箱验证码重置
+              </button>
+            ) : null}
             {isCodeLogin ? (
               <button className="auth-switch" type="button" onClick={() => switchMode('login')}>
                 使用密码登录
+              </button>
+            ) : null}
+            {isResetPassword ? (
+              <button className="auth-switch" type="button" onClick={() => switchMode('login')}>
+                返回密码登录
               </button>
             ) : null}
             {error ? (
@@ -2320,7 +3508,7 @@ function AuthModal({ onClose, onSuccess }) {
             {statusMessage ? <div className="auth-note">{statusMessage}</div> : null}
             <button className="auth-submit" type="submit" disabled={!canSubmit || isSubmitting}>
               {isSubmitting ? <LoaderCircle size={18} /> : null}
-              {isSubmitting ? (isRegister ? '注册中' : '登录中') : isRegister ? '使用邮箱注册' : isCodeLogin ? '验证码登录' : '登录'}
+              {isSubmitting ? (isRegister ? '注册中' : isResetPassword ? '重置中' : '登录中') : isRegister ? '使用邮箱注册' : isResetPassword ? '重置并登录' : isCodeLogin ? '验证码登录' : '登录'}
             </button>
             {isRegister ? (
               <button className="auth-help" type="button" onClick={() => switchMode('login')}>
@@ -2387,7 +3575,7 @@ function PricingPage({ packages, authSession, onAuthOpen, onUserChange, onBack }
     <section className="pricing-page">
       <nav className="pricing-nav" aria-label="订阅导航">
         <button type="button" onClick={onBack}>
-          BERSERK AI
+          NEO AI
         </button>
         <div>
           <a href="#pricing-plans">积分套餐</a>
@@ -2398,7 +3586,7 @@ function PricingPage({ packages, authSession, onAuthOpen, onUserChange, onBack }
         </div>
       </nav>
       <header className="pricing-hero">
-        <h1>购买 Berserk AI 积分</h1>
+        <h1>购买 Neo AI 积分</h1>
         <button type="button">一次性积分包</button>
         <p>图片生成 3 积分/张。通过卡密平台购买后，回到本页输入卡密兑换积分。</p>
         <div className="payment-coming">微信支付、支付宝支付即将上线</div>
@@ -2469,7 +3657,7 @@ function Footer() {
     <footer className="site-footer">
       <div>
         <a className="footer-brand" href="#">
-          <img src="/assets/berserk-ai-icon.png" alt="" /> Berserk AI
+          <img src="/assets/berserk-ai-icon.png" alt="" /> Neo AI
         </a>
         <p>Copyright © 2026 保留所有权利。</p>
       </div>
@@ -2550,8 +3738,8 @@ function ShareModal({ session, onClose, onAuthOpen }) {
     }
     try {
       await navigator.share({
-        title: 'Berserk AI 邀请',
-        text: '用我的邀请链接注册 Berserk AI，一起领积分创作图片。',
+        title: 'Neo AI 邀请',
+        text: '用我的邀请链接注册 Neo AI，一起领积分创作图片。',
         url: inviteLink,
       });
       setMessage('分享面板已打开。');
@@ -2597,12 +3785,13 @@ function ShareModal({ session, onClose, onAuthOpen }) {
   );
 }
 
-function ProfileModal({ session, onClose, onAuthOpen, onUserChange }) {
+function ProfileModal({ session, onClose, onAuthOpen, onUserChange, onSessionChange }) {
   const user = session?.user;
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [avatarURL, setAvatarURL] = useState(user?.avatarURL || '');
   const [signature, setSignature] = useState(user?.signature || '');
   const [gender, setGender] = useState(user?.gender || '');
+  const [activeTab, setActiveTab] = useState('profile');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -2610,8 +3799,25 @@ function ProfileModal({ session, onClose, onAuthOpen, onUserChange }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [passwordMessage, setPasswordMessage] = useState('');
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetSendingCode, setResetSendingCode] = useState(false);
+  const [resetCountdown, setResetCountdown] = useState(0);
+  const [resetCodeSent, setResetCodeSent] = useState(false);
+  const profileEmail = user?.email || '';
 
   useEscape(onClose);
+
+  useEffect(() => {
+    if (resetCountdown <= 0) return undefined;
+    const timer = window.setTimeout(() => {
+      setResetCountdown((value) => Math.max(0, value - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [resetCountdown]);
 
   const handleAvatarFile = (event) => {
     const file = event.target.files?.[0];
@@ -2669,67 +3875,171 @@ function ProfileModal({ session, onClose, onAuthOpen, onUserChange }) {
     }
   };
 
+  const handleResetCodeRequest = async () => {
+    if (!profileEmail) {
+      setResetMessage('当前账号没有可验证的邮箱。');
+      return;
+    }
+    setResetSendingCode(true);
+    setResetMessage('');
+    try {
+      const result = await requestEmailCode({ email: profileEmail, mode: 'reset' });
+      setResetCountdown(result?.expiresIn || 90);
+      setResetCodeSent(true);
+      setResetMessage(`验证码已发送到 ${profileEmail}。`);
+    } catch (error) {
+      setResetMessage(getErrorMessage(error, '验证码发送失败'));
+    } finally {
+      setResetSendingCode(false);
+    }
+  };
+
+  const handleEmailResetSubmit = async (event) => {
+    event.preventDefault();
+    if (!profileEmail) {
+      setResetMessage('当前账号没有可验证的邮箱。');
+      return;
+    }
+    if (resetCode.trim().length !== 6) {
+      setResetMessage('请输入 6 位邮箱验证码。');
+      return;
+    }
+    if (resetNewPassword.trim().length < 8) {
+      setResetMessage('新密码至少需要 8 位。');
+      return;
+    }
+    if (resetNewPassword !== resetConfirmPassword) {
+      setResetMessage('两次输入的新密码不一致。');
+      return;
+    }
+    setResetSaving(true);
+    setResetMessage('');
+    try {
+      const verification = await verifyEmailCode({ email: profileEmail, code: resetCode, mode: 'reset' });
+      const sessionPayload = await resetEmailPassword({ email: profileEmail, password: resetNewPassword, setupToken: verification.setupToken });
+      if (sessionPayload?.token && sessionPayload?.user) {
+        onSessionChange(sessionPayload);
+      } else if (sessionPayload?.user) {
+        onUserChange(sessionPayload.user);
+      }
+      setResetCode('');
+      setResetNewPassword('');
+      setResetConfirmPassword('');
+      setResetCodeSent(false);
+      setResetCountdown(0);
+      setResetMessage('密码已通过邮箱验证更新。');
+    } catch (error) {
+      setResetMessage(getErrorMessage(error, '重置密码失败'));
+    } finally {
+      setResetSaving(false);
+    }
+  };
+
   return (
     <div className="profile-overlay" role="dialog" aria-modal="true" aria-label="用户资料" onClick={onClose}>
       <div className="profile-card" onClick={(event) => event.stopPropagation()}>
         <button className="modal-close profile-close" type="button" aria-label="关闭资料卡" onClick={onClose}>
           <X size={18} />
         </button>
-        <form className="profile-form" onSubmit={handleSubmit}>
-          <div className="profile-hero">
-            <label className="avatar-picker">
-              {avatarURL ? <img src={avatarURL} alt="" /> : <span>{(user?.email || 'B').slice(0, 1).toUpperCase()}</span>}
-              <input type="file" accept="image/*" onChange={handleAvatarFile} />
+        <div className="profile-hero">
+          <label className="avatar-picker">
+            {avatarURL ? <img src={avatarURL} alt="" /> : <span>{(user?.email || 'N').slice(0, 1).toUpperCase()}</span>}
+            <input type="file" accept="image/*" onChange={handleAvatarFile} />
+          </label>
+          <div>
+            <strong>{user?.email || '未登录用户'}</strong>
+            <span>{user?.credits ?? 0} Zaps</span>
+          </div>
+        </div>
+        <div className="profile-tabs" role="tablist" aria-label="个人中心设置">
+          <button className={activeTab === 'profile' ? 'active' : ''} type="button" role="tab" aria-selected={activeTab === 'profile'} onClick={() => setActiveTab('profile')}>
+            个人资料
+          </button>
+          <button className={activeTab === 'password' ? 'active' : ''} type="button" role="tab" aria-selected={activeTab === 'password'} onClick={() => setActiveTab('password')}>
+            密码安全
+          </button>
+        </div>
+        {activeTab === 'profile' ? (
+          <form className="profile-form" onSubmit={handleSubmit}>
+            <label>
+              昵称
+              <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="给自己起个创作者名字" />
             </label>
-            <div>
-              <strong>{user?.email || '未登录用户'}</strong>
-              <span>{user?.credits ?? 0} Zaps</span>
-            </div>
+            <label>
+              性别
+              <select value={gender} onChange={(event) => setGender(event.target.value)}>
+                <option value="">不展示</option>
+                <option value="female">女</option>
+                <option value="male">男</option>
+                <option value="nonbinary">非二元</option>
+              </select>
+            </label>
+            <label>
+              个性签名
+              <textarea value={signature} onChange={(event) => setSignature(event.target.value)} placeholder="写一句会显示在资料卡上的创作宣言" />
+            </label>
+            {message ? <p>{message}</p> : null}
+            <button type="submit" disabled={saving}>
+              {saving ? '保存中' : '保存资料'}
+            </button>
+          </form>
+        ) : (
+          <div className="profile-security-panel">
+            <form className="profile-password-form" onSubmit={handlePasswordSubmit}>
+              <div className="profile-section-title">
+                <KeyRound size={17} />
+                <strong>使用当前密码修改</strong>
+              </div>
+              <label>
+                当前密码
+                <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="输入当前密码" autoComplete="current-password" />
+              </label>
+              <label>
+                新密码
+                <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少 8 位" autoComplete="new-password" />
+              </label>
+              <label>
+                确认新密码
+                <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入新密码" autoComplete="new-password" />
+              </label>
+              {passwordMessage ? <p>{passwordMessage}</p> : null}
+              <button type="submit" disabled={passwordSaving}>
+                {passwordSaving ? '更新中' : '更新密码'}
+              </button>
+            </form>
+            <form className="profile-password-form profile-reset-form" onSubmit={handleEmailResetSubmit}>
+              <div className="profile-section-title">
+                <Mail size={17} />
+                <strong>忘记密码，用邮箱验证重置</strong>
+              </div>
+              <label>
+                验证邮箱
+                <input value={profileEmail} readOnly placeholder="当前账号邮箱" />
+              </label>
+              <div className="profile-code-line">
+                <label>
+                  邮箱验证码
+                  <input type="text" inputMode="numeric" value={resetCode} onChange={(event) => setResetCode(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6 位验证码" autoComplete="one-time-code" />
+                </label>
+                <button type="button" onClick={handleResetCodeRequest} disabled={!profileEmail || resetSendingCode || resetCountdown > 0}>
+                  {resetSendingCode ? '发送中' : resetCountdown > 0 ? `${resetCountdown}s` : resetCodeSent ? '重发' : '获取验证码'}
+                </button>
+              </div>
+              <label>
+                新密码
+                <input type="password" value={resetNewPassword} onChange={(event) => setResetNewPassword(event.target.value)} placeholder="至少 8 位" autoComplete="new-password" />
+              </label>
+              <label>
+                确认新密码
+                <input type="password" value={resetConfirmPassword} onChange={(event) => setResetConfirmPassword(event.target.value)} placeholder="再次输入新密码" autoComplete="new-password" />
+              </label>
+              {resetMessage ? <p>{resetMessage}</p> : null}
+              <button type="submit" disabled={resetSaving}>
+                {resetSaving ? '重置中' : '通过邮箱验证重置'}
+              </button>
+            </form>
           </div>
-          <label>
-            昵称
-            <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="给自己起个创作者名字" />
-          </label>
-          <label>
-            性别
-            <select value={gender} onChange={(event) => setGender(event.target.value)}>
-              <option value="">不展示</option>
-              <option value="female">女</option>
-              <option value="male">男</option>
-              <option value="nonbinary">非二元</option>
-            </select>
-          </label>
-          <label>
-            个性签名
-            <textarea value={signature} onChange={(event) => setSignature(event.target.value)} placeholder="写一句会显示在资料卡上的创作宣言" />
-          </label>
-          {message ? <p>{message}</p> : null}
-          <button type="submit" disabled={saving}>
-            {saving ? '保存中' : '保存资料'}
-          </button>
-        </form>
-        <form className="profile-password-form" onSubmit={handlePasswordSubmit}>
-          <div className="profile-section-title">
-            <KeyRound size={17} />
-            <strong>修改密码</strong>
-          </div>
-          <label>
-            当前密码
-            <input type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} placeholder="输入当前密码" autoComplete="current-password" />
-          </label>
-          <label>
-            新密码
-            <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="至少 8 位" autoComplete="new-password" />
-          </label>
-          <label>
-            确认新密码
-            <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入新密码" autoComplete="new-password" />
-          </label>
-          {passwordMessage ? <p>{passwordMessage}</p> : null}
-          <button type="submit" disabled={passwordSaving}>
-            {passwordSaving ? '更新中' : '更新密码'}
-          </button>
-        </form>
+        )}
       </div>
     </div>
   );
@@ -2786,6 +4096,14 @@ function buildInviteLink(inviteCode) {
 
 async function requestEmailCode({ email, mode }) {
   return postJSON('/api/v1/auth/email/code', { email: email.trim().toLowerCase(), mode, appID: AUTH_APP_ID }, '验证码发送失败');
+}
+
+async function verifyEmailCode({ email, code, mode }) {
+  return postJSON('/api/v1/auth/email/verify', { email: email.trim().toLowerCase(), code: code.trim(), mode, appID: AUTH_APP_ID }, '验证码验证失败');
+}
+
+async function resetEmailPassword({ email, password, setupToken }) {
+  return postJSON('/api/v1/auth/email/reset', { email: email.trim().toLowerCase(), password, setupToken, appID: AUTH_APP_ID }, '重置密码失败');
 }
 
 async function loginWithEmailCode({ email, code }) {
@@ -2861,35 +4179,6 @@ function formatViews(value) {
   if (count >= 10000) return `${(count / 10000).toFixed(1)}万`;
   if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
   return String(Math.max(0, Math.round(count)));
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function resizeCrop(base, dx, dy, mode) {
-  if (mode === 'move') {
-    return {
-      ...base,
-      x: clamp(base.x + dx, 0, 100 - base.w),
-      y: clamp(base.y + dy, 0, 100 - base.h),
-    };
-  }
-  const minSize = 8;
-  let left = base.x;
-  let top = base.y;
-  let right = base.x + base.w;
-  let bottom = base.y + base.h;
-  if (mode.includes('w')) left = clamp(base.x + dx, 0, right - minSize);
-  if (mode.includes('e')) right = clamp(base.x + base.w + dx, left + minSize, 100);
-  if (mode.includes('n')) top = clamp(base.y + dy, 0, bottom - minSize);
-  if (mode.includes('s')) bottom = clamp(base.y + base.h + dy, top + minSize, 100);
-  return {
-    x: left,
-    y: top,
-    w: right - left,
-    h: bottom - top,
-  };
 }
 
 function clampDimensionInput(value, fallback) {

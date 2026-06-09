@@ -262,3 +262,36 @@ func (s *webImageTestStore) FailWebImageTask(context.Context, string, string, st
 func (s *webImageTestStore) SetWebImageTaskPublic(context.Context, string, string, bool) (models.WebImageTask, error) {
 	return models.WebImageTask{}, nil
 }
+func (s *webImageTestStore) ListComicWorks(context.Context, string) ([]models.ComicWork, error) {
+	return nil, nil
+}
+func (s *webImageTestStore) GetComicWork(context.Context, string, string) (models.ComicWork, error) {
+	return models.ComicWork{}, store.ErrNotFound
+}
+func (s *webImageTestStore) CreateComicWork(context.Context, string, string, string, string) (models.ComicWork, error) {
+	return models.ComicWork{}, nil
+}
+func (s *webImageTestStore) CreateComicEpisode(context.Context, string, string, string, string) (models.ComicEpisode, error) {
+	return models.ComicEpisode{}, nil
+}
+func (s *webImageTestStore) CreateComicPage(context.Context, string, string, string, string) (models.ComicPage, error) {
+	return models.ComicPage{}, nil
+}
+func (s *webImageTestStore) UpdateComicPage(context.Context, string, string, models.ComicUpdatePageRequest) (models.ComicPage, error) {
+	return models.ComicPage{}, nil
+}
+func (s *webImageTestStore) DuplicateComicPage(context.Context, string, string) (models.ComicPage, error) {
+	return models.ComicPage{}, nil
+}
+func (s *webImageTestStore) ListComicAssets(context.Context, string, string, string, bool) ([]models.ComicAsset, error) {
+	return nil, nil
+}
+func (s *webImageTestStore) CreateComicAsset(context.Context, string, string, string, string, string, string, bool) (models.ComicAsset, error) {
+	return models.ComicAsset{}, nil
+}
+func (s *webImageTestStore) UpdateComicAsset(context.Context, string, string, models.ComicAssetUpdateRequest) (models.ComicAsset, error) {
+	return models.ComicAsset{}, nil
+}
+func (s *webImageTestStore) SetComicAssetFavorite(context.Context, string, string, bool) (models.ComicAsset, error) {
+	return models.ComicAsset{}, nil
+}

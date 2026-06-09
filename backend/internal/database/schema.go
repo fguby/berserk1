@@ -52,6 +52,9 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			consumed_at timestamptz,
 			created_at timestamptz not null default now()
 		)`,
+		`alter table email_auth_codes add column if not exists verify_token_hash text not null default ''`,
+		`alter table email_auth_codes add column if not exists verify_token_expires_at timestamptz`,
+		`alter table email_auth_codes add column if not exists consumed_at timestamptz`,
 		`create index if not exists email_auth_codes_lookup_idx on email_auth_codes (app_id, email, purpose, created_at desc)`,
 		`create table if not exists user_credit_accounts (
 			user_id uuid primary key references users(id) on delete cascade,
@@ -194,6 +197,10 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			is_prompt_featured boolean not null default false,
 			created_at timestamptz not null default now()
 		)`,
+		`alter table web_gallery_images add column if not exists is_public boolean not null default false`,
+		`alter table web_gallery_images add column if not exists is_featured boolean not null default false`,
+		`alter table web_gallery_images add column if not exists is_prompt_featured boolean not null default false`,
+		`alter table web_gallery_images add column if not exists credits_cost integer not null default 0`,
 		`create index if not exists web_gallery_images_public_created_idx on web_gallery_images (is_public, is_featured, created_at desc)`,
 		`create table if not exists web_gallery_image_likes (
 			image_id uuid not null references web_gallery_images(id) on delete cascade,
@@ -234,12 +241,83 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			completed_at timestamptz,
 			updated_at timestamptz not null default now()
 		)`,
+		`alter table web_image_tasks add column if not exists is_public boolean not null default false`,
+		`alter table web_image_tasks add column if not exists gallery_image_id uuid references web_gallery_images(id) on delete set null`,
+		`alter table web_image_tasks add column if not exists result_image_data text not null default ''`,
+		`alter table web_image_tasks add column if not exists result_mime_type text not null default ''`,
 		`create unique index if not exists web_image_tasks_one_active_per_user_idx
 			on web_image_tasks (user_id)
 			where status in ('queued', 'running')`,
 		`create index if not exists web_image_tasks_user_created_idx on web_image_tasks (user_id, created_at desc)`,
 		`alter table web_gallery_images alter column is_public set default false`,
 		`alter table web_image_tasks alter column is_public set default false`,
+		`create table if not exists comic_works (
+			id uuid primary key default gen_random_uuid(),
+			user_id uuid not null references users(id) on delete cascade,
+			title text not null default '',
+			subtitle text not null default '',
+			cover text not null default '',
+			created_at timestamptz not null default now(),
+			updated_at timestamptz not null default now()
+		)`,
+		`alter table comic_works add column if not exists subtitle text not null default ''`,
+		`alter table comic_works add column if not exists cover text not null default ''`,
+		`alter table comic_works add column if not exists updated_at timestamptz not null default now()`,
+		`create index if not exists comic_works_user_updated_idx on comic_works (user_id, updated_at desc)`,
+		`create table if not exists comic_episodes (
+			id uuid primary key default gen_random_uuid(),
+			work_id uuid not null references comic_works(id) on delete cascade,
+			title text not null default '',
+			status text not null default '草稿',
+			summary text not null default '',
+			sort_order integer not null default 0,
+			created_at timestamptz not null default now(),
+			updated_at timestamptz not null default now()
+		)`,
+		`alter table comic_episodes add column if not exists status text not null default '草稿'`,
+		`alter table comic_episodes add column if not exists summary text not null default ''`,
+		`alter table comic_episodes add column if not exists sort_order integer not null default 0`,
+		`alter table comic_episodes add column if not exists updated_at timestamptz not null default now()`,
+		`create index if not exists comic_episodes_work_sort_idx on comic_episodes (work_id, sort_order, created_at)`,
+		`create table if not exists comic_pages (
+			id uuid primary key default gen_random_uuid(),
+			episode_id uuid not null references comic_episodes(id) on delete cascade,
+			title text not null default '',
+			thumb text not null default '',
+			status text not null default '草稿',
+			sort_order integer not null default 0,
+			script_beats jsonb not null default '[]'::jsonb,
+			panels jsonb not null default '[]'::jsonb,
+			created_at timestamptz not null default now(),
+			updated_at timestamptz not null default now()
+		)`,
+		`alter table comic_pages add column if not exists thumb text not null default ''`,
+		`alter table comic_pages add column if not exists status text not null default '草稿'`,
+		`alter table comic_pages add column if not exists sort_order integer not null default 0`,
+		`alter table comic_pages add column if not exists script_beats jsonb not null default '[]'::jsonb`,
+		`alter table comic_pages add column if not exists panels jsonb not null default '[]'::jsonb`,
+		`alter table comic_pages add column if not exists updated_at timestamptz not null default now()`,
+		`create index if not exists comic_pages_episode_sort_idx on comic_pages (episode_id, sort_order, created_at)`,
+		`create table if not exists comic_assets (
+			id uuid primary key default gen_random_uuid(),
+			user_id uuid not null references users(id) on delete cascade,
+			work_id uuid references comic_works(id) on delete cascade,
+			type text not null default '人物',
+			title text not null default '',
+			prompt text not null default '',
+			src text not null default '',
+			favorite boolean not null default false,
+			created_at timestamptz not null default now(),
+			updated_at timestamptz not null default now()
+		)`,
+		`alter table comic_assets add column if not exists work_id uuid references comic_works(id) on delete cascade`,
+		`alter table comic_assets add column if not exists type text not null default '人物'`,
+		`alter table comic_assets add column if not exists prompt text not null default ''`,
+		`alter table comic_assets add column if not exists src text not null default ''`,
+		`alter table comic_assets add column if not exists favorite boolean not null default false`,
+		`alter table comic_assets add column if not exists updated_at timestamptz not null default now()`,
+		`create index if not exists comic_assets_user_work_type_idx on comic_assets (user_id, work_id, type, updated_at desc)`,
+		`create index if not exists comic_assets_user_favorite_idx on comic_assets (user_id, favorite, updated_at desc)`,
 	}
 	for index, statement := range statements {
 		if _, err := pool.Exec(ctx, statement); err != nil {

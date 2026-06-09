@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -69,6 +70,17 @@ type BerserkStore interface {
 	CompleteWebImageTask(ctx context.Context, userID string, id string, result models.WebGeneratedImage, galleryID string) (models.WebImageTask, error)
 	FailWebImageTask(ctx context.Context, userID string, id string, errorMessage string) (models.WebImageTask, error)
 	SetWebImageTaskPublic(ctx context.Context, userID string, id string, isPublic bool) (models.WebImageTask, error)
+	ListComicWorks(ctx context.Context, userID string) ([]models.ComicWork, error)
+	GetComicWork(ctx context.Context, userID string, id string) (models.ComicWork, error)
+	CreateComicWork(ctx context.Context, userID string, title string, subtitle string, cover string) (models.ComicWork, error)
+	CreateComicEpisode(ctx context.Context, userID string, workID string, title string, summary string) (models.ComicEpisode, error)
+	CreateComicPage(ctx context.Context, userID string, episodeID string, title string, thumb string) (models.ComicPage, error)
+	UpdateComicPage(ctx context.Context, userID string, pageID string, request models.ComicUpdatePageRequest) (models.ComicPage, error)
+	DuplicateComicPage(ctx context.Context, userID string, pageID string) (models.ComicPage, error)
+	ListComicAssets(ctx context.Context, userID string, workID string, assetType string, favoritesOnly bool) ([]models.ComicAsset, error)
+	CreateComicAsset(ctx context.Context, userID string, workID string, assetType string, title string, prompt string, src string, favorite bool) (models.ComicAsset, error)
+	UpdateComicAsset(ctx context.Context, userID string, assetID string, request models.ComicAssetUpdateRequest) (models.ComicAsset, error)
+	SetComicAssetFavorite(ctx context.Context, userID string, assetID string, favorite bool) (models.ComicAsset, error)
 }
 
 type Postgres struct {
@@ -1157,6 +1169,284 @@ func (p *Postgres) SetWebImageTaskPublic(ctx context.Context, userID string, id 
 	return task, tx.Commit(ctx)
 }
 
+func (p *Postgres) ListComicWorks(ctx context.Context, userID string) ([]models.ComicWork, error) {
+	rows, err := p.pool.Query(ctx, `
+		select id::text, user_id::text, title, subtitle, cover, created_at, updated_at
+		from comic_works
+		where user_id = $1::uuid
+		order by updated_at desc, created_at desc
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var works []models.ComicWork
+	for rows.Next() {
+		work, err := scanComicWorkRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		work.Episodes, err = p.listComicEpisodes(ctx, userID, work.ID)
+		if err != nil {
+			return nil, err
+		}
+		works = append(works, work)
+	}
+	return works, rows.Err()
+}
+
+func (p *Postgres) GetComicWork(ctx context.Context, userID string, id string) (models.ComicWork, error) {
+	row := p.pool.QueryRow(ctx, `
+		select id::text, user_id::text, title, subtitle, cover, created_at, updated_at
+		from comic_works
+		where id = $1::uuid and user_id = $2::uuid
+	`, id, userID)
+	work, err := scanComicWorkRow(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.ComicWork{}, ErrNotFound
+	}
+	if err != nil {
+		return models.ComicWork{}, err
+	}
+	work.Episodes, err = p.listComicEpisodes(ctx, userID, work.ID)
+	return work, err
+}
+
+func (p *Postgres) CreateComicWork(ctx context.Context, userID string, title string, subtitle string, cover string) (models.ComicWork, error) {
+	title = firstNonEmptyStore(strings.TrimSpace(title), "新漫画作品")
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return models.ComicWork{}, err
+	}
+	defer tx.Rollback(ctx)
+	var workID string
+	if err := tx.QueryRow(ctx, `
+		insert into comic_works (user_id, title, subtitle, cover)
+		values ($1::uuid, $2, $3, $4)
+		returning id::text
+	`, userID, title, strings.TrimSpace(subtitle), strings.TrimSpace(cover)).Scan(&workID); err != nil {
+		return models.ComicWork{}, err
+	}
+	var episodeID string
+	if err := tx.QueryRow(ctx, `
+		insert into comic_episodes (work_id, title, summary, sort_order)
+		values ($1::uuid, '第 1 话 · 未命名章节', '粘贴小说文本后，Neo AI 会拆解出分镜页面。', 1)
+		returning id::text
+	`, workID).Scan(&episodeID); err != nil {
+		return models.ComicWork{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+		insert into comic_pages (episode_id, title, thumb, status, sort_order)
+		values ($1::uuid, '第 1 页', $2, '草稿', 1)
+	`, episodeID, strings.TrimSpace(cover)); err != nil {
+		return models.ComicWork{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return models.ComicWork{}, err
+	}
+	return p.GetComicWork(ctx, userID, workID)
+}
+
+func (p *Postgres) CreateComicEpisode(ctx context.Context, userID string, workID string, title string, summary string) (models.ComicEpisode, error) {
+	if _, err := p.GetComicWork(ctx, userID, workID); err != nil {
+		return models.ComicEpisode{}, err
+	}
+	title = firstNonEmptyStore(strings.TrimSpace(title), "新章节")
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return models.ComicEpisode{}, err
+	}
+	defer tx.Rollback(ctx)
+	var episodeID string
+	if err := tx.QueryRow(ctx, `
+		insert into comic_episodes (work_id, title, summary, sort_order)
+		values ($1::uuid, $2, $3, coalesce((select max(sort_order) + 1 from comic_episodes where work_id = $1::uuid), 1))
+		returning id::text
+	`, workID, title, strings.TrimSpace(summary)).Scan(&episodeID); err != nil {
+		return models.ComicEpisode{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+		insert into comic_pages (episode_id, title, status, sort_order)
+		values ($1::uuid, '第 1 页', '草稿', 1)
+	`, episodeID); err != nil {
+		return models.ComicEpisode{}, err
+	}
+	if _, err := tx.Exec(ctx, `update comic_works set updated_at = now() where id = $1::uuid and user_id = $2::uuid`, workID, userID); err != nil {
+		return models.ComicEpisode{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return models.ComicEpisode{}, err
+	}
+	episodes, err := p.listComicEpisodes(ctx, userID, workID)
+	if err != nil {
+		return models.ComicEpisode{}, err
+	}
+	for _, episode := range episodes {
+		if episode.ID == episodeID {
+			return episode, nil
+		}
+	}
+	return models.ComicEpisode{}, ErrNotFound
+}
+
+func (p *Postgres) CreateComicPage(ctx context.Context, userID string, episodeID string, title string, thumb string) (models.ComicPage, error) {
+	workID, err := p.comicWorkIDForEpisode(ctx, userID, episodeID)
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	title = firstNonEmptyStore(strings.TrimSpace(title), "新页面")
+	row := p.pool.QueryRow(ctx, `
+		insert into comic_pages (episode_id, title, thumb, status, sort_order)
+		values ($1::uuid, $2, $3, '草稿', coalesce((select max(sort_order) + 1 from comic_pages where episode_id = $1::uuid), 1))
+		returning id::text, episode_id::text, title, thumb, status, sort_order, script_beats, panels, created_at, updated_at
+	`, episodeID, title, strings.TrimSpace(thumb))
+	page, err := scanComicPageRow(row)
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	_, _ = p.pool.Exec(ctx, `update comic_works set updated_at = now() where id = $1::uuid`, workID)
+	return page, nil
+}
+
+func (p *Postgres) UpdateComicPage(ctx context.Context, userID string, pageID string, request models.ComicUpdatePageRequest) (models.ComicPage, error) {
+	workID, err := p.comicWorkIDForPage(ctx, userID, pageID)
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	beatsData, err := json.Marshal(request.ScriptBeats)
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	panelsData, err := json.Marshal(request.Panels)
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	row := p.pool.QueryRow(ctx, `
+		update comic_pages
+		set title = coalesce(nullif($3, ''), title),
+			thumb = coalesce(nullif($4, ''), thumb),
+			status = coalesce(nullif($5, ''), status),
+			script_beats = case when $6::boolean then $7::jsonb else script_beats end,
+			panels = case when $8::boolean then $9::jsonb else panels end,
+			updated_at = now()
+		where id = $1::uuid and exists (
+			select 1 from comic_episodes e
+			join comic_works w on w.id = e.work_id
+			where e.id = comic_pages.episode_id and w.user_id = $2::uuid
+		)
+		returning id::text, episode_id::text, title, thumb, status, sort_order, script_beats, panels, created_at, updated_at
+	`, pageID, userID, strings.TrimSpace(request.Title), strings.TrimSpace(request.Thumb), strings.TrimSpace(request.Status),
+		request.ScriptBeats != nil, string(beatsData), request.Panels != nil, string(panelsData))
+	page, err := scanComicPageRow(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.ComicPage{}, ErrNotFound
+	}
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	_, _ = p.pool.Exec(ctx, `update comic_works set updated_at = now() where id = $1::uuid`, workID)
+	return page, nil
+}
+
+func (p *Postgres) DuplicateComicPage(ctx context.Context, userID string, pageID string) (models.ComicPage, error) {
+	workID, err := p.comicWorkIDForPage(ctx, userID, pageID)
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	row := p.pool.QueryRow(ctx, `
+		insert into comic_pages (episode_id, title, thumb, status, sort_order, script_beats, panels)
+		select episode_id, title || ' 副本', thumb, '草稿',
+			coalesce((select max(sort_order) + 1 from comic_pages sibling where sibling.episode_id = comic_pages.episode_id), 1),
+			script_beats, panels
+		from comic_pages
+		where id = $1::uuid
+		returning id::text, episode_id::text, title, thumb, status, sort_order, script_beats, panels, created_at, updated_at
+	`, pageID)
+	page, err := scanComicPageRow(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.ComicPage{}, ErrNotFound
+	}
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	_, _ = p.pool.Exec(ctx, `update comic_works set updated_at = now() where id = $1::uuid`, workID)
+	return page, nil
+}
+
+func (p *Postgres) ListComicAssets(ctx context.Context, userID string, workID string, assetType string, favoritesOnly bool) ([]models.ComicAsset, error) {
+	args := []any{userID, strings.TrimSpace(workID)}
+	filters := "where user_id = $1::uuid and (nullif($2, '') is null or work_id = $2::uuid)"
+	if strings.TrimSpace(assetType) != "" && assetType != "收藏" {
+		args = append(args, normalizeComicAssetType(assetType))
+		filters += " and type = $" + strconv.Itoa(len(args))
+	}
+	if favoritesOnly {
+		filters += " and favorite = true"
+	}
+	rows, err := p.pool.Query(ctx, `
+		select id::text, coalesce(work_id::text, ''), type, title, prompt, src, favorite, created_at, updated_at
+		from comic_assets
+		`+filters+`
+		order by favorite desc, updated_at desc, created_at desc
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []models.ComicAsset
+	for rows.Next() {
+		item, err := scanComicAssetRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (p *Postgres) CreateComicAsset(ctx context.Context, userID string, workID string, assetType string, title string, prompt string, src string, favorite bool) (models.ComicAsset, error) {
+	workID = strings.TrimSpace(workID)
+	if workID != "" {
+		if _, err := p.GetComicWork(ctx, userID, workID); err != nil {
+			return models.ComicAsset{}, err
+		}
+	}
+	row := p.pool.QueryRow(ctx, `
+		insert into comic_assets (user_id, work_id, type, title, prompt, src, favorite)
+		values ($1::uuid, nullif($2, '')::uuid, $3, $4, $5, $6, $7)
+		returning id::text, coalesce(work_id::text, ''), type, title, prompt, src, favorite, created_at, updated_at
+	`, userID, workID, normalizeComicAssetType(assetType), firstNonEmptyStore(strings.TrimSpace(title), "未命名资产"), strings.TrimSpace(prompt), strings.TrimSpace(src), favorite)
+	return scanComicAssetRow(row)
+}
+
+func (p *Postgres) UpdateComicAsset(ctx context.Context, userID string, assetID string, request models.ComicAssetUpdateRequest) (models.ComicAsset, error) {
+	favorite := false
+	hasFavorite := request.Favorite != nil
+	if request.Favorite != nil {
+		favorite = *request.Favorite
+	}
+	row := p.pool.QueryRow(ctx, `
+		update comic_assets
+		set type = case when nullif($3, '') is null then type else $3 end,
+			title = case when nullif($4, '') is null then title else $4 end,
+			prompt = case when nullif($5, '') is null then prompt else $5 end,
+			src = case when nullif($6, '') is null then src else $6 end,
+			favorite = case when $7::boolean then $8::boolean else favorite end,
+			updated_at = now()
+		where id = $1::uuid and user_id = $2::uuid
+		returning id::text, coalesce(work_id::text, ''), type, title, prompt, src, favorite, created_at, updated_at
+	`, assetID, userID, normalizeComicAssetType(request.Type), strings.TrimSpace(request.Title), strings.TrimSpace(request.Prompt), strings.TrimSpace(request.Src), hasFavorite, favorite)
+	item, err := scanComicAssetRow(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.ComicAsset{}, ErrNotFound
+	}
+	return item, err
+}
+
+func (p *Postgres) SetComicAssetFavorite(ctx context.Context, userID string, assetID string, favorite bool) (models.ComicAsset, error) {
+	return p.UpdateComicAsset(ctx, userID, assetID, models.ComicAssetUpdateRequest{Favorite: &favorite})
+}
+
 func (p *Postgres) scanUser(ctx context.Context, query string, args ...any) (models.User, error) {
 	var user models.User
 	err := p.pool.QueryRow(ctx, query, args...).Scan(
@@ -1241,6 +1531,137 @@ func scanGalleryImage(row interface{ Scan(dest ...any) error }) (models.WebGalle
 	return item, nil
 }
 
+func (p *Postgres) listComicEpisodes(ctx context.Context, userID string, workID string) ([]models.ComicEpisode, error) {
+	rows, err := p.pool.Query(ctx, `
+		select e.id::text, e.work_id::text, e.title, e.status, e.summary, e.sort_order, e.created_at, e.updated_at
+		from comic_episodes e
+		join comic_works w on w.id = e.work_id
+		where e.work_id = $1::uuid and w.user_id = $2::uuid
+		order by e.sort_order, e.created_at
+	`, workID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var episodes []models.ComicEpisode
+	for rows.Next() {
+		episode, err := scanComicEpisodeRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		episode.Pages, err = p.listComicPages(ctx, userID, episode.ID)
+		if err != nil {
+			return nil, err
+		}
+		episodes = append(episodes, episode)
+	}
+	return episodes, rows.Err()
+}
+
+func (p *Postgres) listComicPages(ctx context.Context, userID string, episodeID string) ([]models.ComicPage, error) {
+	rows, err := p.pool.Query(ctx, `
+		select p.id::text, p.episode_id::text, p.title, p.thumb, p.status, p.sort_order, p.script_beats, p.panels, p.created_at, p.updated_at
+		from comic_pages p
+		join comic_episodes e on e.id = p.episode_id
+		join comic_works w on w.id = e.work_id
+		where p.episode_id = $1::uuid and w.user_id = $2::uuid
+		order by p.sort_order, p.created_at
+	`, episodeID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pages []models.ComicPage
+	for rows.Next() {
+		page, err := scanComicPageRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		pages = append(pages, page)
+	}
+	return pages, rows.Err()
+}
+
+func (p *Postgres) comicWorkIDForEpisode(ctx context.Context, userID string, episodeID string) (string, error) {
+	var workID string
+	err := p.pool.QueryRow(ctx, `
+		select w.id::text
+		from comic_episodes e
+		join comic_works w on w.id = e.work_id
+		where e.id = $1::uuid and w.user_id = $2::uuid
+	`, episodeID, userID).Scan(&workID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return workID, err
+}
+
+func (p *Postgres) comicWorkIDForPage(ctx context.Context, userID string, pageID string) (string, error) {
+	var workID string
+	err := p.pool.QueryRow(ctx, `
+		select w.id::text
+		from comic_pages p
+		join comic_episodes e on e.id = p.episode_id
+		join comic_works w on w.id = e.work_id
+		where p.id = $1::uuid and w.user_id = $2::uuid
+	`, pageID, userID).Scan(&workID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	return workID, err
+}
+
+func scanComicWorkRow(row interface{ Scan(dest ...any) error }) (models.ComicWork, error) {
+	var item models.ComicWork
+	var createdAt, updatedAt time.Time
+	err := row.Scan(&item.ID, &item.UserID, &item.Title, &item.Subtitle, &item.Cover, &createdAt, &updatedAt)
+	if err != nil {
+		return models.ComicWork{}, err
+	}
+	item.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	item.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+	return item, nil
+}
+
+func scanComicEpisodeRow(row interface{ Scan(dest ...any) error }) (models.ComicEpisode, error) {
+	var item models.ComicEpisode
+	var createdAt, updatedAt time.Time
+	err := row.Scan(&item.ID, &item.WorkID, &item.Title, &item.Status, &item.Summary, &item.SortOrder, &createdAt, &updatedAt)
+	if err != nil {
+		return models.ComicEpisode{}, err
+	}
+	item.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	item.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+	return item, nil
+}
+
+func scanComicPageRow(row interface{ Scan(dest ...any) error }) (models.ComicPage, error) {
+	var item models.ComicPage
+	var beatsData, panelsData []byte
+	var createdAt, updatedAt time.Time
+	err := row.Scan(&item.ID, &item.EpisodeID, &item.Title, &item.Thumb, &item.Status, &item.SortOrder, &beatsData, &panelsData, &createdAt, &updatedAt)
+	if err != nil {
+		return models.ComicPage{}, err
+	}
+	_ = json.Unmarshal(beatsData, &item.ScriptBeats)
+	_ = json.Unmarshal(panelsData, &item.Panels)
+	item.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	item.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+	return item, nil
+}
+
+func scanComicAssetRow(row interface{ Scan(dest ...any) error }) (models.ComicAsset, error) {
+	var item models.ComicAsset
+	var createdAt, updatedAt time.Time
+	err := row.Scan(&item.ID, &item.WorkID, &item.Type, &item.Title, &item.Prompt, &item.Src, &item.Favorite, &createdAt, &updatedAt)
+	if err != nil {
+		return models.ComicAsset{}, err
+	}
+	item.CreatedAt = createdAt.UTC().Format(time.RFC3339)
+	item.UpdatedAt = updatedAt.UTC().Format(time.RFC3339)
+	return item, nil
+}
+
 func webImageTaskSelect(prefix string) string {
 	return prefix + `
 		id::text, user_id::text, prompt, style, coalesce(model_id, ''), coalesce(model_name, ''), size, quality, n, credits_cost,
@@ -1303,6 +1724,15 @@ func webGalleryRatio(size string) string {
 		return "square"
 	}
 	return "tall"
+}
+
+func normalizeComicAssetType(value string) string {
+	switch strings.TrimSpace(value) {
+	case "场景", "道具", "收藏":
+		return strings.TrimSpace(value)
+	default:
+		return "人物"
+	}
 }
 
 func randomToken(size int) (string, error) {

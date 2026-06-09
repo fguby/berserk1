@@ -138,7 +138,7 @@ func NewServer(cfg ServerConfig) *Server {
 		smtpUsername:       cfg.SMTPUsername,
 		smtpPassword:       cfg.SMTPPassword,
 		smtpFromEmail:      cfg.SMTPFromEmail,
-		smtpFromName:       firstNonEmpty(cfg.SMTPFromName, "Berserk AI"),
+		smtpFromName:       firstNonEmpty(cfg.SMTPFromName, "NeoAI"),
 		smtpTLSMode:        firstNonEmpty(cfg.SMTPTLSMode, "starttls"),
 		xaiAPIKey:          strings.TrimSpace(cfg.XAIAPIKey),
 		xaiBaseURL:         strings.TrimRight(firstNonEmpty(cfg.XAIBaseURL, "https://api-xai.ainaibahub.com/v1"), "/"),
@@ -224,6 +224,18 @@ func (s *Server) registerAPIRoutes(api *echo.Group) {
 	api.PATCH("/images/tasks/:id/public", s.setWebImageTaskPublic)
 	api.POST("/images/generate", s.generateWebImage, webImageLimiter)
 	api.POST("/web/images/generate", s.generateWebImage, webImageLimiter)
+	api.GET("/manga/works", s.listComicWorks)
+	api.POST("/manga/works", s.createComicWork)
+	api.POST("/manga/works/:workID/episodes", s.createComicEpisode)
+	api.POST("/manga/episodes/:episodeID/pages", s.createComicPage)
+	api.PATCH("/manga/pages/:pageID", s.updateComicPage)
+	api.POST("/manga/pages/:pageID/duplicate", s.duplicateComicPage)
+	api.POST("/manga/script", s.parseComicScript)
+	api.POST("/manga/generate", s.generateComicImage, webImageLimiter)
+	api.GET("/studio/assets", s.listComicAssets)
+	api.PATCH("/studio/assets/:id", s.updateComicAsset)
+	api.POST("/studio/assets/:id/favorite", s.favoriteComicAsset)
+	api.POST("/studio/assets/:id/generate", s.generateComicImage, webImageLimiter)
 }
 
 func (s *Server) getMe(c echo.Context) error {

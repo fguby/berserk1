@@ -8,3 +8,5 @@ backend/config.yaml
 backend/berserk
 backend/*.log
 *.tmp
+*.zip
+release/

@@ -1,4 +1,4 @@
-# Berserk AI Studio
+# Neo AI Studio
 
 ## API routing
 
