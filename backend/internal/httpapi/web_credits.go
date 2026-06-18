@@ -1,11 +1,17 @@
 package httpapi
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"pianke-ticket/backend/internal/models"
+	paymentalipay "pianke-ticket/backend/internal/payment/alipay"
 	"pianke-ticket/backend/internal/store"
 
 	"github.com/labstack/echo/v4"
@@ -72,18 +78,39 @@ func (s *Server) purchaseCredits(c echo.Context) error {
 		}
 		return c.JSON(http.StatusOK, models.CreditPurchaseResponse{Order: order, User: user, PaymentURL: pkg.PaymentURL})
 	}
-	order, err := s.store.CreateCreditOrder(c.Request().Context(), user.ID, pkg)
+	if s.alipayClient == nil || !s.alipayClient.Ready() {
+		return c.JSON(http.StatusServiceUnavailable, models.ErrorResponse{Message: "支付宝支付暂未配置，请稍后再试"})
+	}
+	channel := firstNonEmpty(strings.TrimSpace(request.Channel), "alipay_pc")
+	method := paymentalipay.MethodPagePay
+	switch channel {
+	case "alipay_pc", "pc", "":
+		method = paymentalipay.MethodPagePay
+	case "alipay_wap", "wap", "h5":
+		method = paymentalipay.MethodWAPPay
+	default:
+		return c.JSON(http.StatusBadRequest, models.ErrorResponse{Message: "unsupported payment channel"})
+	}
+	outTradeNo, err := newOutTradeNo()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, models.ErrorResponse{Message: "create order number failed"})
+	}
+	order, err := s.store.CreatePendingCreditOrder(c.Request().Context(), user.ID, pkg, "alipay", outTradeNo, time.Now().Add(30*time.Minute))
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, models.ErrorResponse{Message: "purchase credits failed"})
 	}
-	user, err = s.store.GetUser(c.Request().Context(), user.ID)
-	if errors.Is(err, store.ErrNotFound) {
-		return c.JSON(http.StatusUnauthorized, models.ErrorResponse{Message: "unauthorized"})
-	}
+	paymentHTML, err := s.alipayClient.PaymentForm(paymentalipay.PayRequest{
+		OutTradeNo:  order.OutTradeNo,
+		Subject:     fmt.Sprintf("%s - %s", pkg.Name, "Berserk AI 积分"),
+		TotalAmount: centsToYuan(pkg.AmountCents),
+		ProductCode: "",
+		Body:        fmt.Sprintf("购买 %d 积分", pkg.Credits),
+		Method:      method,
+	})
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, models.ErrorResponse{Message: "load user failed"})
+		return c.JSON(http.StatusInternalServerError, models.ErrorResponse{Message: "create alipay payment failed"})
 	}
-	return c.JSON(http.StatusOK, models.CreditPurchaseResponse{Order: order, User: user, PaymentURL: pkg.PaymentURL})
+	return c.JSON(http.StatusOK, models.CreditPurchaseResponse{Order: order, User: user, PaymentHTML: paymentHTML})
 }
 
 func creditPackageByID(id string) (models.CreditPackage, bool) {
@@ -98,6 +125,63 @@ func creditPackageByIDFrom(packages []models.CreditPackage, id string) (models.C
 		}
 	}
 	return models.CreditPackage{}, false
+}
+
+func (s *Server) getCreditOrder(c echo.Context) error {
+	user, ok := s.requireUser(c)
+	if !ok {
+		return nil
+	}
+	order, err := s.store.GetCreditOrder(c.Request().Context(), user.ID, c.Param("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		return c.JSON(http.StatusNotFound, models.ErrorResponse{Message: "order not found"})
+	}
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, models.ErrorResponse{Message: "load order failed"})
+	}
+	user, err = s.store.GetUser(c.Request().Context(), user.ID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, models.ErrorResponse{Message: "load user failed"})
+	}
+	return c.JSON(http.StatusOK, models.CreditOrderResponse{Order: order, User: user})
+}
+
+func newOutTradeNo() (string, error) {
+	random := make([]byte, 5)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	return "BA" + time.Now().UTC().Format("20060102150405") + strings.ToUpper(hex.EncodeToString(random)), nil
+}
+
+func centsToYuan(cents int) string {
+	return fmt.Sprintf("%d.%02d", cents/100, cents%100)
+}
+
+func yuanToCents(value string) (int, error) {
+	parts := strings.Split(strings.TrimSpace(value), ".")
+	if len(parts) == 0 || len(parts) > 2 {
+		return 0, fmt.Errorf("invalid amount")
+	}
+	yuan, err := strconv.Atoi(firstNonEmpty(parts[0], "0"))
+	if err != nil {
+		return 0, err
+	}
+	fen := 0
+	if len(parts) == 2 {
+		decimal := parts[1]
+		if len(decimal) == 1 {
+			decimal += "0"
+		}
+		if len(decimal) > 2 {
+			decimal = decimal[:2]
+		}
+		fen, err = strconv.Atoi(firstNonEmpty(decimal, "0"))
+		if err != nil {
+			return 0, err
+		}
+	}
+	return yuan*100 + fen, nil
 }
 
 func (s *Server) redeemCreditCode(c echo.Context) error {

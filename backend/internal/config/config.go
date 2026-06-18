@@ -41,6 +41,13 @@ type Config struct {
 	R2AccessKeySecret      string
 	R2ObjectPrefix         string
 	R2SignedURLTTLSeconds  string
+	AlipayAppID            string
+	AlipayAppPrivateKey    string
+	AlipayPublicKey        string
+	AlipayGateway          string
+	AlipayNotifyURL        string
+	AlipayReturnURL        string
+	AlipaySellerID         string
 }
 
 type DatabaseSSHTunnelConfig struct {
@@ -80,7 +87,7 @@ func Load() Config {
 		SMTPUsername:           getEnv("SMTP_USERNAME", fileConfig.value("smtp_username", "")),
 		SMTPPassword:           getEnv("SMTP_PASSWORD", fileConfig.value("smtp_password", "")),
 		SMTPFromEmail:          getEnv("SMTP_FROM_EMAIL", fileConfig.value("smtp_from_email", "")),
-		SMTPFromName:           getEnv("SMTP_FROM_NAME", fileConfig.value("smtp_from_name", "NeoAI")),
+		SMTPFromName:           getEnv("SMTP_FROM_NAME", fileConfig.value("smtp_from_name", "Berserk AI")),
 		SMTPTLSMode:            getEnv("SMTP_TLS_MODE", fileConfig.value("smtp_tls_mode", "starttls")),
 		XAIAPIKey:              getEnv("XAI_API_KEY", fileConfig.value("xai_api_key", "")),
 		XAIBaseURL:             strings.TrimRight(getEnv("XAI_BASE_URL", fileConfig.value("xai_base_url", "https://api-xai.ainaibahub.com/v1")), "/"),
@@ -102,6 +109,13 @@ func Load() Config {
 		R2AccessKeySecret:      getEnv("R2_ACCESS_KEY_SECRET", fileConfig.value("r2_access_key_secret", "")),
 		R2ObjectPrefix:         getEnv("R2_OBJECT_PREFIX", fileConfig.value("r2_object_prefix", "berserk/generated")),
 		R2SignedURLTTLSeconds:  getEnv("R2_SIGNED_URL_TTL_SECONDS", fileConfig.value("r2_signed_url_ttl_seconds", "3600")),
+		AlipayAppID:            getEnv("ALIPAY_APP_ID", fileConfig.value("alipay_app_id", "")),
+		AlipayAppPrivateKey:    getEnv("ALIPAY_APP_PRIVATE_KEY", fileConfig.value("alipay_app_private_key", "")),
+		AlipayPublicKey:        getEnv("ALIPAY_PUBLIC_KEY", fileConfig.value("alipay_public_key", "")),
+		AlipayGateway:          strings.TrimRight(getEnv("ALIPAY_GATEWAY", fileConfig.value("alipay_gateway", "https://openapi.alipay.com/gateway.do")), "/"),
+		AlipayNotifyURL:        getEnv("ALIPAY_NOTIFY_URL", fileConfig.value("alipay_notify_url", "")),
+		AlipayReturnURL:        getEnv("ALIPAY_RETURN_URL", fileConfig.value("alipay_return_url", "")),
+		AlipaySellerID:         getEnv("ALIPAY_SELLER_ID", fileConfig.value("alipay_seller_id", "")),
 	}
 }
 

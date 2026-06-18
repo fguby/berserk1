@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"pianke-ticket/backend/internal/models"
+	paymentalipay "pianke-ticket/backend/internal/payment/alipay"
 	"pianke-ticket/backend/internal/store"
 
 	"github.com/labstack/echo/v4"
@@ -50,6 +51,13 @@ type ServerConfig struct {
 	R2AccessKeySecret      string
 	R2ObjectPrefix         string
 	R2SignedURLTTLSeconds  string
+	AlipayAppID            string
+	AlipayAppPrivateKey    string
+	AlipayPublicKey        string
+	AlipayGateway          string
+	AlipayNotifyURL        string
+	AlipayReturnURL        string
+	AlipaySellerID         string
 	Store                  store.BerserkStore
 	Logger                 *slog.Logger
 }
@@ -87,6 +95,7 @@ type Server struct {
 	r2AccessKeySecret  string
 	r2ObjectPrefix     string
 	r2SignedURLTTL     time.Duration
+	alipayClient       *paymentalipay.Client
 	store              store.BerserkStore
 	logger             *slog.Logger
 }
@@ -110,6 +119,8 @@ func NewServer(cfg ServerConfig) *Server {
 			"http://localhost:5177",
 			"https://www.eatfit.fun",
 			"https://eatfit.fun",
+			"https://www.berserk-ai.com",
+			"https://berserk-ai.com",
 		},
 		AllowMethods: []string{http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
@@ -127,6 +138,19 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 	}))
 
+	alipayClient, alipayErr := paymentalipay.NewClient(paymentalipay.Config{
+		AppID:           cfg.AlipayAppID,
+		AppPrivateKey:   cfg.AlipayAppPrivateKey,
+		AlipayPublicKey: cfg.AlipayPublicKey,
+		Gateway:         cfg.AlipayGateway,
+		NotifyURL:       cfg.AlipayNotifyURL,
+		ReturnURL:       cfg.AlipayReturnURL,
+		SellerID:        cfg.AlipaySellerID,
+	})
+	if alipayErr != nil && firstNonEmpty(cfg.AlipayAppID, cfg.AlipayAppPrivateKey, cfg.AlipayPublicKey) != "" && cfg.Logger != nil {
+		cfg.Logger.Warn("alipay client disabled", "error", alipayErr)
+	}
+
 	server := &Server{
 		echo:               e,
 		addr:               firstNonEmpty(cfg.Addr, ":8080"),
@@ -138,7 +162,7 @@ func NewServer(cfg ServerConfig) *Server {
 		smtpUsername:       cfg.SMTPUsername,
 		smtpPassword:       cfg.SMTPPassword,
 		smtpFromEmail:      cfg.SMTPFromEmail,
-		smtpFromName:       firstNonEmpty(cfg.SMTPFromName, "NeoAI"),
+		smtpFromName:       firstNonEmpty(cfg.SMTPFromName, "Berserk AI"),
 		smtpTLSMode:        firstNonEmpty(cfg.SMTPTLSMode, "starttls"),
 		xaiAPIKey:          strings.TrimSpace(cfg.XAIAPIKey),
 		xaiBaseURL:         strings.TrimRight(firstNonEmpty(cfg.XAIBaseURL, "https://api-xai.ainaibahub.com/v1"), "/"),
@@ -160,6 +184,7 @@ func NewServer(cfg ServerConfig) *Server {
 		r2AccessKeySecret:  strings.TrimSpace(cfg.R2AccessKeySecret),
 		r2ObjectPrefix:     strings.Trim(strings.TrimSpace(cfg.R2ObjectPrefix), "/"),
 		r2SignedURLTTL:     signedURLTTL(cfg.R2SignedURLTTLSeconds),
+		alipayClient:       alipayClient,
 		store:              cfg.Store,
 		logger:             cfg.Logger,
 	}
@@ -210,7 +235,9 @@ func (s *Server) registerAPIRoutes(api *echo.Group) {
 	api.DELETE("/me", s.deleteMe)
 	api.GET("/credits/packages", s.listCreditPackages)
 	api.POST("/credits/purchase", s.purchaseCredits)
+	api.GET("/credits/orders/:id", s.getCreditOrder)
 	api.POST("/credits/redeem", s.redeemCreditCode)
+	api.POST("/payments/alipay/notify", s.handleAlipayNotify)
 	api.GET("/referrals/me", s.getReferralSummary)
 	api.GET("/images/gallery", s.listWebGallery)
 	api.GET("/images/proxy", s.proxyStoredImage)

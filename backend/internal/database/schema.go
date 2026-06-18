@@ -106,6 +106,30 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 			created_at timestamptz not null default now(),
 			paid_at timestamptz
 		)`,
+		`alter table credit_orders add column if not exists out_trade_no text not null default ''`,
+		`alter table credit_orders add column if not exists provider_trade_no text not null default ''`,
+		`alter table credit_orders add column if not exists paid_amount_cents integer not null default 0`,
+		`alter table credit_orders add column if not exists failed_reason text not null default ''`,
+		`alter table credit_orders add column if not exists expired_at timestamptz`,
+		`alter table credit_orders add column if not exists updated_at timestamptz not null default now()`,
+		`create unique index if not exists credit_orders_out_trade_no_idx
+			on credit_orders (out_trade_no)
+			where out_trade_no <> ''`,
+		`create index if not exists credit_orders_user_created_idx on credit_orders (user_id, created_at desc)`,
+		`create table if not exists alipay_notifications (
+			id uuid primary key default gen_random_uuid(),
+			out_trade_no text not null,
+			trade_no text not null default '',
+			trade_status text not null default '',
+			total_amount text not null default '',
+			raw_body text not null,
+			verified boolean not null default false,
+			processed boolean not null default false,
+			error_message text not null default '',
+			created_at timestamptz not null default now()
+		)`,
+		`create index if not exists alipay_notifications_out_trade_no_idx
+			on alipay_notifications (out_trade_no, created_at desc)`,
 		`create table if not exists credit_package_configs (
 			package_id text primary key,
 			name text not null,

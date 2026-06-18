@@ -104,6 +104,13 @@ func main() {
 		R2AccessKeySecret:      cfg.R2AccessKeySecret,
 		R2ObjectPrefix:         cfg.R2ObjectPrefix,
 		R2SignedURLTTLSeconds:  cfg.R2SignedURLTTLSeconds,
+		AlipayAppID:            cfg.AlipayAppID,
+		AlipayAppPrivateKey:    cfg.AlipayAppPrivateKey,
+		AlipayPublicKey:        cfg.AlipayPublicKey,
+		AlipayGateway:          cfg.AlipayGateway,
+		AlipayNotifyURL:        cfg.AlipayNotifyURL,
+		AlipayReturnURL:        cfg.AlipayReturnURL,
+		AlipaySellerID:         cfg.AlipaySellerID,
 		Store:                  ticketStore,
 		Logger:                 logger,
 	})

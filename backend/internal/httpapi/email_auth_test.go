@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-func TestBuildEmailMessageIncludesNeoAIVerificationCard(t *testing.T) {
+func TestBuildEmailMessageIncludesBerserkAIVerificationCard(t *testing.T) {
 	htmlBody := buildVerificationEmailHTML("123456", "注册", 90)
 	message := buildEmailMessage(
 		"noreply@example.com",
-		"NeoAI",
+		"Berserk AI",
 		"user@example.com",
-		"NeoAI 邮箱验证码",
-		"你的 NeoAI 注册验证码是：123456",
+		"Berserk AI 邮箱验证码",
+		"你的 Berserk AI 注册验证码是：123456",
 		htmlBody,
 	)
 
@@ -20,8 +20,8 @@ func TestBuildEmailMessageIncludesNeoAIVerificationCard(t *testing.T) {
 		"Content-Type: multipart/alternative;",
 		"Content-Type: text/plain; charset=UTF-8",
 		"Content-Type: text/html; charset=UTF-8",
-		"Neo<span style=\"color:#8b35ff;\">AI</span>",
-		"你的 NeoAI 验证码",
+		"Berserk <span style=\"color:#8b35ff;\">AI</span>",
+		"你的 Berserk AI 验证码",
 		"123456",
 		"验证码将在 <strong style=\"color:#17142a;\">90 秒</strong> 后失效",
 	}
@@ -32,12 +32,12 @@ func TestBuildEmailMessageIncludesNeoAIVerificationCard(t *testing.T) {
 	}
 }
 
-func TestNeoAIMailFromNameReplacesLegacyBrand(t *testing.T) {
-	if got := neoAIMailFromName("Berserk AI"); got != "NeoAI" {
+func TestBerserkAIMailFromNameKeepsBrand(t *testing.T) {
+	if got := berserkAIMailFromName("Berserk AI"); got != "Berserk AI" {
 		t.Fatalf("expected legacy sender name to be replaced, got %q", got)
 	}
-	if got := neoAIMailFromName(""); got != "NeoAI" {
-		t.Fatalf("expected empty sender name to default to NeoAI, got %q", got)
+	if got := berserkAIMailFromName(""); got != "Berserk AI" {
+		t.Fatalf("expected empty sender name to default to Berserk AI, got %q", got)
 	}
 }
 

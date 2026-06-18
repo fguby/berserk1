@@ -49,7 +49,7 @@ import {
   Zap,
 } from 'lucide-react';
 
-const DEFAULT_API_BASE_URL = 'https://neo-ai.pw/berserk';
+const DEFAULT_API_BASE_URL = 'http://www.berserk-ai.com/berserk';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '');
 const AUTH_APP_ID = 'berserk.web';
 const AUTH_STORAGE_KEY = 'berserk-ai-auth-session';
@@ -57,6 +57,7 @@ const STYLE_FAVORITES_KEY = 'berserk-ai-style-favorites';
 const CREDIT_ADJUSTMENT_NOTICE_KEY = 'berserk-ai-credit-adjustment-notices';
 const IMAGE_PUBLIC_NOTICE_KEY = 'berserk-ai-image-public-notice';
 const INVITE_CODE_STORAGE_KEY = 'berserk-ai-invite-code';
+const PAYMENT_RESULT_PATH = '/payment/result';
 const IMAGE_CREDIT_COST = 3;
 
 const navItems = [
@@ -169,7 +170,7 @@ const filterChips = [
   { label: '动画片', icon: Video },
   { label: '音乐', icon: Sparkles },
   { label: '幻灯片', icon: BookImage },
-  { label: 'NeoAIConfession', featured: true },
+  { label: 'BerserkAIConfession', featured: true },
   { label: '场景', hash: true },
   { label: 'OC', hash: true },
   { label: '可爱' },
@@ -303,7 +304,7 @@ function tagsFromImages(items) {
     ['赛博朋克', /赛博|霓虹|未来感/],
   ];
   const tags = dictionary.filter(([, pattern]) => pattern.test(source)).map(([label]) => label);
-  return Array.from(new Set(['小说封面', '所有帖子', '精选', ...tags, 'NeoAIConfession', 'OC', 'NSFW'])).slice(0, 18);
+  return Array.from(new Set(['小说封面', '所有帖子', '精选', ...tags, 'BerserkAIConfession', 'OC', 'NSFW'])).slice(0, 18);
 }
 
 function normalizeGalleryItem(item) {
@@ -327,7 +328,7 @@ function normalizeGalleryItem(item) {
     textureSrc: item.textureURL || textureProxyURLFor(imageURL) || textureProxyURLFor(thumbnailURL) || thumbnailURL || imageURL,
     width,
     height,
-    author: item.author || 'Neo AI',
+    author: item.author || 'Berserk AI',
     authorAvatarURL: item.authorAvatarURL || '/assets/berserk-ai-icon.png',
     likes: item.likeCount || 0,
     likeCount: item.likeCount || 0,
@@ -395,7 +396,7 @@ function App() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [authSession, setAuthSession] = useState(() => readStoredAuthSession());
   const [theme, setTheme] = useState('light');
-  const [view, setView] = useState('home');
+  const [view, setView] = useState(() => (window.location.pathname === PAYMENT_RESULT_PATH ? 'payment-result' : 'home'));
   const [profileOpen, setProfileOpen] = useState(false);
   const [feedItems, setFeedItems] = useState([]);
   const [feedLoading, setFeedLoading] = useState(true);
@@ -442,7 +443,7 @@ function App() {
   }, []);
 
   const loadGalleryPage = ({ reset = false } = {}) => {
-    if (view === 'history' || view === 'pricing') return;
+    if (view === 'history' || view === 'pricing' || view === 'payment-result') return;
     if (view === 'favorites' && !authSession?.token) {
       setFeedItems([]);
       setFeedLoading(false);
@@ -605,6 +606,13 @@ function App() {
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextSession));
   };
 
+  const handleNavigate = (nextView) => {
+    if (window.location.pathname === PAYMENT_RESULT_PATH) {
+      window.history.replaceState({}, '', `${window.location.origin}/`);
+    }
+    setView(nextView);
+  };
+
   const handleGenerateImage = async ({
     prompt,
     style,
@@ -649,7 +657,7 @@ function App() {
       textureSrc: image.textureURL || textureProxyURLFor(image.url) || textureProxyURLFor(image.thumbnailURL) || image.thumbnailURL || image.url,
       width: 1024,
       height: size.includes('16:9') || size.includes('4:3') || size.includes('21:9') ? 768 : 1365,
-      author: authSession.user?.displayName || authSession.user?.email || 'Neo AI',
+      author: authSession.user?.displayName || authSession.user?.email || 'Berserk AI',
       likes: 0,
       likeCount: 0,
       likedByMe: false,
@@ -740,13 +748,15 @@ function App() {
   };
 
   return (
-    <div className={`berserk-app${view === 'pricing' ? ' pricing-mode' : ''}`} data-theme={theme}>
-      {view === 'pricing' ? (
-        <PricingPage packages={packageItems} authSession={authSession} onAuthOpen={() => setAuthOpen(true)} onUserChange={handleSessionUser} onBack={() => setView('home')} />
+    <div className={`berserk-app${view === 'pricing' || view === 'payment-result' ? ' pricing-mode' : ''}`} data-theme={theme}>
+      {view === 'payment-result' ? (
+        <PaymentResultPage authSession={authSession} onAuthOpen={() => setAuthOpen(true)} onUserChange={handleSessionUser} onHome={() => handleNavigate('home')} onPricing={() => handleNavigate('pricing')} />
+      ) : view === 'pricing' ? (
+        <PricingPage packages={packageItems} authSession={authSession} onAuthOpen={() => setAuthOpen(true)} onUserChange={handleSessionUser} onBack={() => handleNavigate('home')} />
       ) : (
         <>
           <TopBar currentUser={authSession?.user} theme={theme} onThemeChange={setTheme} onAuthOpen={() => setAuthOpen(true)} />
-          <Sidebar currentUser={authSession?.user} currentView={view} pendingTaskCount={pendingTaskCount} onNavigate={setView} onProfileOpen={() => setProfileOpen(true)} onShareOpen={() => {
+          <Sidebar currentUser={authSession?.user} currentView={view} pendingTaskCount={pendingTaskCount} onNavigate={handleNavigate} onProfileOpen={() => setProfileOpen(true)} onShareOpen={() => {
             if (!authSession?.token) setAuthOpen(true);
             else setShareOpen(true);
           }} onAuthOpen={() => setAuthOpen(true)} onLogout={handleLogout} onAppClick={(tool) => {
@@ -773,7 +783,7 @@ function App() {
               pendingTaskCount={pendingTaskCount}
               onClose={() => setMobileMenuOpen(false)}
               onNavigate={(nextView) => {
-                setView(nextView);
+                handleNavigate(nextView);
                 setMobileMenuOpen(false);
               }}
               onProfileOpen={() => {
@@ -880,11 +890,11 @@ function PricingNoticeTicker() {
 function Sidebar({ currentUser, currentView, pendingTaskCount, onNavigate, onProfileOpen, onShareOpen, onAuthOpen, onLogout, onAppClick }) {
   return (
     <aside className="sidebar">
-      <a className="brand" href="#" aria-label="Neo AI" onClick={() => onNavigate('home')}>
+      <a className="brand" href="#" aria-label="Berserk AI" onClick={() => onNavigate('home')}>
         <img src="/assets/berserk-ai-icon.png" alt="" />
         <span>
-          <strong>NEO AI</strong>
-          <small>https://neo-ai.pw/</small>
+          <strong>BERSERK AI</strong>
+          <small>https://www.berserk-ai.com/</small>
         </span>
       </a>
       <nav className="side-nav" aria-label="主导航">
@@ -928,7 +938,7 @@ function Sidebar({ currentUser, currentView, pendingTaskCount, onNavigate, onPro
       <section className="share-card">
         <button type="button" onClick={onShareOpen}>
           <span>
-            <strong>分享 Neo AI</strong>
+            <strong>分享 Berserk AI</strong>
             <small>邀请注册得 10 积分</small>
           </span>
           <i>
@@ -955,7 +965,7 @@ function Sidebar({ currentUser, currentView, pendingTaskCount, onNavigate, onPro
         </button>
       )}
       <div className="social-row">
-        <a href="https://www.douyin.com/user/MS4wLjABAAAAPctRiYcwFwNx7JTqw55gxq20_jzroA_b48W1edHc7eI" target="_blank" rel="noreferrer" aria-label="Neo AI 抖音">
+        <a href="https://www.douyin.com/user/MS4wLjABAAAAPctRiYcwFwNx7JTqw55gxq20_jzroA_b48W1edHc7eI" target="_blank" rel="noreferrer" aria-label="Berserk AI 抖音">
           <img src="/assets/douyin-icon.svg" alt="" />
         </a>
       </div>
@@ -969,7 +979,7 @@ function MobileTopbar({ onHome, onMenuOpen }) {
       <a
         className="brand"
         href="#"
-        aria-label="Neo AI"
+        aria-label="Berserk AI"
         onClick={(event) => {
           event.preventDefault();
           onHome();
@@ -977,7 +987,7 @@ function MobileTopbar({ onHome, onMenuOpen }) {
       >
         <img src="/assets/berserk-ai-icon.png" alt="" />
         <span>
-          <strong>NEO AI</strong>
+          <strong>BERSERK AI</strong>
           <small>AI Image Studio</small>
         </span>
       </a>
@@ -998,7 +1008,7 @@ function MobileNavDrawer({ currentUser, currentView, pendingTaskCount, onClose, 
           <a
             className="brand"
             href="#"
-            aria-label="Neo AI"
+            aria-label="Berserk AI"
             onClick={(event) => {
               event.preventDefault();
               onNavigate('home');
@@ -1006,7 +1016,7 @@ function MobileNavDrawer({ currentUser, currentView, pendingTaskCount, onClose, 
           >
             <img src="/assets/berserk-ai-icon.png" alt="" />
             <span>
-              <strong>NEO AI</strong>
+              <strong>BERSERK AI</strong>
               <small>AI Image Studio</small>
             </span>
           </a>
@@ -1243,7 +1253,7 @@ function KomikoComposer({ models, feedItems, activeQuery, activeSort, onQueryCha
           </div>
           {dynamicTags.map((label, index) => (
             <button
-              className={`${label === '精选' ? 'active-chip' : label === 'NeoAIConfession' ? 'featured-chip' : ''}${activeQuery === label || (!activeQuery && label === '所有帖子') ? ' selected' : ''}`}
+              className={`${label === '精选' ? 'active-chip' : label === 'BerserkAIConfession' ? 'featured-chip' : ''}${activeQuery === label || (!activeQuery && label === '所有帖子') ? ' selected' : ''}`}
               type="button"
               key={label}
               onClick={() => applyQuery(label)}
@@ -1559,7 +1569,7 @@ function MasonryImage({ item }) {
       <img
         className="masonry-image"
         src={item.src}
-        alt={`${item.author || 'Neo AI'} 的作品`}
+        alt={`${item.author || 'Berserk AI'} 的作品`}
         loading="lazy"
         decoding="async"
         onError={() => setLoaded(true)}
@@ -1784,7 +1794,7 @@ function ImagePreview({ item, models, currentUser, onClose, onLike, onFavorite, 
                 <img src={item.authorAvatarURL || '/assets/berserk-ai-icon.png'} alt="" />
                 <span>
                   <strong>{item.author}</strong>
-                  <small>@{String(item.author || 'NeoAI').replace(/\s+/g, '')}</small>
+                  <small>@{String(item.author || 'BerserkAI').replace(/\s+/g, '')}</small>
                 </span>
               </div>
               <div className="preview-stats">
@@ -2382,7 +2392,7 @@ function ComicStudioModal({ session, onAuthOpen, onUserChange, onClose }) {
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${selectedWork?.title || 'neo-ai-comic'}-${selectedComicPage?.title || 'page'}.html`;
+    link.download = `${selectedWork?.title || 'berserk-ai-comic'}-${selectedComicPage?.title || 'page'}.html`;
     link.click();
     URL.revokeObjectURL(link.href);
     showToast('漫画页已导出为 HTML，可用于预览或转 PDF');
@@ -2842,7 +2852,7 @@ function ComicStudioModal({ session, onAuthOpen, onUserChange, onClose }) {
         <header className="comic-topbar comic-manager-topbar">
           <div className="comic-brand">
             <img src="/assets/berserk-ai-icon.png" alt="" />
-            <strong>Neo AI</strong>
+            <strong>Berserk AI</strong>
             <span>AI 漫画</span>
           </div>
           <div className="comic-project-title">
@@ -2870,7 +2880,7 @@ function ComicStudioModal({ session, onAuthOpen, onUserChange, onClose }) {
               <div className="comic-manager-empty">
                 <strong>登录后查看真实漫画作品</strong>
                 <span>AI 漫画作品、章节、页面和资产都来自后端账户数据。</span>
-                <button type="button" onClick={onAuthOpen}>登录 Neo AI</button>
+                <button type="button" onClick={onAuthOpen}>登录 Berserk AI</button>
               </div>
             ) : comicLoading ? (
               <div className="comic-manager-empty">
@@ -2921,7 +2931,7 @@ function ComicStudioModal({ session, onAuthOpen, onUserChange, onClose }) {
         <header className="comic-topbar comic-manager-topbar">
           <div className="comic-brand">
             <img src="/assets/berserk-ai-icon.png" alt="" />
-            <strong>Neo AI</strong>
+            <strong>Berserk AI</strong>
             <span>AI 漫画</span>
           </div>
           <button className="comic-back" type="button" onClick={() => setComicView(pageMode ? 'episodes' : 'works')}>
@@ -3011,7 +3021,7 @@ function ComicStudioModal({ session, onAuthOpen, onUserChange, onClose }) {
       <header className="comic-topbar">
         <div className="comic-brand">
           <img src="/assets/berserk-ai-icon.png" alt="" />
-          <strong>Neo AI</strong>
+          <strong>Berserk AI</strong>
           <span>AI 漫画</span>
         </div>
         <button className="comic-back" type="button" onClick={() => setComicView('pages')}>
@@ -3217,7 +3227,7 @@ function SizeEditorModal({ onClose }) {
     }
     context.drawImage(image, 0, 0, outputWidth, outputHeight);
     const link = document.createElement('a');
-    link.download = `neo-ai-${outputWidth}x${outputHeight}.${selectedFormat.extension}`;
+    link.download = `berserk-ai-${outputWidth}x${outputHeight}.${selectedFormat.extension}`;
     link.href = canvas.toDataURL(selectedFormat.mime, selectedFormat.quality);
     link.click();
     setMessage(`已导出 ${outputWidth} x ${outputHeight} 的 ${selectedFormat.label} 图片。`);
@@ -3331,7 +3341,7 @@ function AuthModal({ onClose, onSuccess }) {
   const isCodeLogin = mode === 'login-code';
   const isResetPassword = mode === 'reset-password';
   const needsCode = isRegister || isCodeLogin || isResetPassword;
-  const title = isRegister ? '注册 Neo AI' : isResetPassword ? '重置登录密码' : '欢迎来到 Neo AI';
+  const title = isRegister ? '注册 Berserk AI' : isResetPassword ? '重置登录密码' : '欢迎来到 Berserk AI';
   const subtitle = isRegister ? '注册后即可保存你的创作记录' : isResetPassword ? '用邮箱验证码确认身份后设置新密码' : '登录后同步保存你的灵感与作品';
   const canRequestCode = Boolean(cleanEmail) && (!isRegister || password.trim().length >= 8);
   const canSubmit =
@@ -3423,7 +3433,7 @@ function AuthModal({ onClose, onSuccess }) {
         <div className="auth-panel">
           <div className="auth-mark">
             <img src="/assets/berserk-ai-icon.png" alt="" />
-            <span>NEO AI</span>
+            <span>BERSERK AI</span>
           </div>
           <h2>{title}</h2>
           <p>{subtitle}</p>
@@ -3527,6 +3537,88 @@ function AuthModal({ onClose, onSuccess }) {
   );
 }
 
+function PaymentResultPage({ authSession, onAuthOpen, onUserChange, onHome, onPricing }) {
+  const [status, setStatus] = useState(authSession?.token ? 'checking' : 'need-login');
+  const [message, setMessage] = useState(authSession?.token ? '正在向后端确认支付宝到账结果...' : '登录后可以查看最新积分余额。');
+  const [currentUser, setCurrentUser] = useState(authSession?.user || null);
+  const query = useMemo(() => new URLSearchParams(window.location.search), []);
+  const outTradeNo = query.get('out_trade_no') || query.get('outTradeNo') || '';
+
+  useEffect(() => {
+    if (!authSession?.token) {
+      setStatus('need-login');
+      setMessage('登录后可以查看最新积分余额。');
+      return undefined;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    let timer = 0;
+    const refreshUser = () => {
+      attempts += 1;
+      getJSON('/api/v1/me', authSession.token)
+        .then((user) => {
+          if (cancelled) return;
+          setCurrentUser(user);
+          if (user?.id) onUserChange(user);
+          setStatus('success');
+          setMessage('如果支付宝已完成扣款，积分会在异步通知到达后自动更新。');
+          if (attempts < 6) {
+            timer = window.setTimeout(refreshUser, 2500);
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setStatus('pending');
+          setMessage(getErrorMessage(error, '暂时无法刷新余额，请稍后手动刷新。'));
+          if (attempts < 6) {
+            timer = window.setTimeout(refreshUser, 2500);
+          }
+        });
+    };
+    refreshUser();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [authSession?.token]);
+
+  const isChecking = status === 'checking' || status === 'pending';
+
+  return (
+    <section className="payment-result-page">
+      <nav className="pricing-nav" aria-label="支付结果导航">
+        <button type="button" onClick={onHome}>
+          BERSERK AI
+        </button>
+        <div>
+          <button type="button" onClick={onPricing}>继续购买</button>
+        </div>
+      </nav>
+      <main className="payment-result-card">
+        <div className={`payment-result-icon ${status}`}>
+          {isChecking ? <LoaderCircle size={34} /> : <ShieldCheck size={34} />}
+        </div>
+        <span>支付宝支付</span>
+        <h1>{status === 'need-login' ? '登录后查看到账结果' : isChecking ? '正在确认到账' : '支付结果已同步'}</h1>
+        <p>{message}</p>
+        {outTradeNo ? <code>{outTradeNo}</code> : null}
+        {currentUser ? (
+          <div className="payment-result-balance">
+            <Zap size={19} fill="currentColor" />
+            <strong>{Number(currentUser.credits || 0).toLocaleString('zh-CN')}</strong>
+            <small>当前积分</small>
+          </div>
+        ) : null}
+        <div className="payment-result-actions">
+          {authSession?.token ? null : <button type="button" onClick={onAuthOpen}>登录账号</button>}
+          <button type="button" onClick={onPricing}>返回积分页</button>
+          <button type="button" onClick={onHome}>开始创作</button>
+        </div>
+      </main>
+    </section>
+  );
+}
+
 function PricingPage({ packages, authSession, onAuthOpen, onUserChange, onBack }) {
   const [redeemCardNo, setRedeemCardNo] = useState('');
   const [redeemPassword, setRedeemPassword] = useState('');
@@ -3543,9 +3635,14 @@ function PricingPage({ packages, authSession, onAuthOpen, onUserChange, onBack }
     setRedeemMessage('');
     try {
       const payload = await authPostJSON('/api/v1/credits/purchase', authSession.token, { packageID: pkg.id }, '创建订单失败');
-      if (payload?.paymentURL) window.open(payload.paymentURL, '_blank', 'noopener,noreferrer');
+      if (payload?.paymentHTML) submitPaymentHTML(payload.paymentHTML);
+      else if (payload?.paymentURL) window.open(payload.paymentURL, '_blank', 'noopener,noreferrer');
       if (payload?.user) onUserChange(payload.user);
-      setRedeemMessage(payload?.paymentURL ? '已打开卡密购买页面，支付后回到这里兑换卡密。' : '积分已到账。');
+      if (payload?.paymentHTML || payload?.paymentURL) {
+        setRedeemMessage('已打开支付宝收银台，支付完成后积分会自动到账。');
+      } else {
+        setRedeemMessage('订单已创建，请稍后刷新查看到账状态。');
+      }
     } catch (error) {
       setRedeemMessage(getErrorMessage(error, '购买失败'));
     } finally {
@@ -3575,7 +3672,7 @@ function PricingPage({ packages, authSession, onAuthOpen, onUserChange, onBack }
     <section className="pricing-page">
       <nav className="pricing-nav" aria-label="订阅导航">
         <button type="button" onClick={onBack}>
-          NEO AI
+          BERSERK AI
         </button>
         <div>
           <a href="#pricing-plans">积分套餐</a>
@@ -3586,10 +3683,10 @@ function PricingPage({ packages, authSession, onAuthOpen, onUserChange, onBack }
         </div>
       </nav>
       <header className="pricing-hero">
-        <h1>购买 Neo AI 积分</h1>
+        <h1>购买 Berserk AI 积分</h1>
         <button type="button">一次性积分包</button>
-        <p>图片生成 3 积分/张。通过卡密平台购买后，回到本页输入卡密兑换积分。</p>
-        <div className="payment-coming">微信支付、支付宝支付即将上线</div>
+        <p>图片生成 3 积分/张。选择积分包后将跳转支付宝收银台，支付成功后自动到账。</p>
+        <div className="payment-coming">支付宝支付已上线</div>
       </header>
       <form className="redeem-panel" onSubmit={handleRedeem}>
         <div>
@@ -3619,7 +3716,7 @@ function PricingPage({ packages, authSession, onAuthOpen, onUserChange, onBack }
               ))}
             </ul>
             <button type="button" onClick={() => handlePurchase(pkg)} disabled={busyPackage === pkg.id}>
-              {busyPackage === pkg.id ? '处理中' : pkg.paymentURL ? '去购买卡密' : '购买积分'}
+              {busyPackage === pkg.id ? '处理中' : pkg.paymentURL ? '去购买卡密' : '支付宝购买'}
             </button>
           </article>
         ))}
@@ -3657,7 +3754,7 @@ function Footer() {
     <footer className="site-footer">
       <div>
         <a className="footer-brand" href="#">
-          <img src="/assets/berserk-ai-icon.png" alt="" /> Neo AI
+          <img src="/assets/berserk-ai-icon.png" alt="" /> Berserk AI
         </a>
         <p>Copyright © 2026 保留所有权利。</p>
       </div>
@@ -3738,8 +3835,8 @@ function ShareModal({ session, onClose, onAuthOpen }) {
     }
     try {
       await navigator.share({
-        title: 'Neo AI 邀请',
-        text: '用我的邀请链接注册 Neo AI，一起领积分创作图片。',
+        title: 'Berserk AI 邀请',
+        text: '用我的邀请链接注册 Berserk AI，一起领积分创作图片。',
         url: inviteLink,
       });
       setMessage('分享面板已打开。');
@@ -4142,6 +4239,12 @@ function normalizeCreditPackage(pkg) {
     popular: pkg.id === 'credits_500' || credits === 550,
     features: [`可兑换 ${credits.toLocaleString('zh-CN')} 积分`, `约可生成 ${Math.max(1, Math.floor(credits / IMAGE_CREDIT_COST))} 张基础模型图片`, '支持卡密兑换到账', '积分长期保留'],
   };
+}
+
+function submitPaymentHTML(paymentHTML) {
+  document.open();
+  document.write(paymentHTML);
+  document.close();
 }
 
 function sizeToBackendSize(size) {

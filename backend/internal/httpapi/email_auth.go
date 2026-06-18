@@ -427,23 +427,23 @@ func (s *Server) sendVerificationEmail(email string, code string, mode string) e
 		return errors.New("smtp is not configured")
 	}
 
-	subject := "NeoAI 邮箱验证码"
+	subject := "Berserk AI 邮箱验证码"
 	action := "登录"
 	if mode == "register" {
 		action = "注册"
 	} else if mode == "reset" {
 		action = "重置密码"
 	}
-	body := fmt.Sprintf("你的 NeoAI %s验证码是：%s\n\n验证码 %d 秒内有效，请勿转发给他人。", action, code, int(s.emailCodeTTL.Seconds()))
+	body := fmt.Sprintf("你的 Berserk AI %s验证码是：%s\n\n验证码 %d 秒内有效，请勿转发给他人。", action, code, int(s.emailCodeTTL.Seconds()))
 	htmlBody := buildVerificationEmailHTML(code, action, int(s.emailCodeTTL.Seconds()))
-	message := buildEmailMessage(s.smtpFromEmail, neoAIMailFromName(s.smtpFromName), email, subject, body, htmlBody)
+	message := buildEmailMessage(s.smtpFromEmail, berserkAIMailFromName(s.smtpFromName), email, subject, body, htmlBody)
 	return s.sendSMTP(email, []byte(message))
 }
 
-func neoAIMailFromName(value string) string {
+func berserkAIMailFromName(value string) string {
 	clean := strings.TrimSpace(value)
 	if clean == "" || strings.Contains(strings.ToLower(clean), "berserk") {
-		return "NeoAI"
+		return "Berserk AI"
 	}
 	return clean
 }
@@ -493,7 +493,7 @@ func buildVerificationEmailHTML(code string, action string, ttlSeconds int) stri
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>NeoAI 邮箱验证码</title>
+  <title>Berserk AI 邮箱验证码</title>
 </head>
 <body style="margin:0;padding:0;background:#f4f1ff;color:#17142a;font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',Arial,sans-serif;">
   <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:linear-gradient(180deg,#f4f1ff,#fbfaff);padding:34px 14px;">
@@ -502,7 +502,7 @@ func buildVerificationEmailHTML(code string, action string, ttlSeconds int) stri
         <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="max-width:520px;border-collapse:separate;border-spacing:0;">
           <tr>
             <td style="padding:0 12px 10px;">
-              <div style="font-size:24px;font-weight:950;letter-spacing:-.02em;color:#17142a;">Neo<span style="color:#8b35ff;">AI</span></div>
+              <div style="font-size:24px;font-weight:950;letter-spacing:-.02em;color:#17142a;">Berserk <span style="color:#8b35ff;">AI</span></div>
             </td>
           </tr>
           <tr>
@@ -510,7 +510,7 @@ func buildVerificationEmailHTML(code string, action string, ttlSeconds int) stri
               <div style="height:10px;background:linear-gradient(90deg,#5f00f5,#b800ff,#6c7bff);"></div>
               <div style="padding:32px 30px 28px;background-image:radial-gradient(circle at 92%% 8%%,rgba(184,0,255,.14),transparent 30%%),radial-gradient(circle at 8%% 92%%,rgba(95,0,245,.12),transparent 28%%);">
                 <div style="display:inline-block;padding:8px 13px;border-radius:999px;background:#f1e9ff;color:#7c35ff;font-size:12px;font-weight:900;">%s验证码</div>
-                <h1 style="margin:20px 0 8px;font-size:29px;line-height:1.15;font-weight:950;letter-spacing:0;color:#17142a;">你的 NeoAI 验证码</h1>
+                <h1 style="margin:20px 0 8px;font-size:29px;line-height:1.15;font-weight:950;letter-spacing:0;color:#17142a;">你的 Berserk AI 验证码</h1>
                 <p style="margin:0 0 22px;color:#635b75;font-size:14px;line-height:1.7;">把下面 6 位数字填回页面，继续完成%s。请勿转发给他人。</p>
                 <div style="border-radius:18px;background:linear-gradient(135deg,#5f00f5,#b800ff);padding:2px;box-shadow:0 16px 34px rgba(124,53,255,.22);">
                   <div style="border-radius:16px;background:#fbfaff;padding:24px 18px;text-align:center;">

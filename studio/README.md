@@ -1,4 +1,4 @@
-# Neo AI Studio
+# Berserk AI Studio
 
 ## API routing
 
@@ -20,4 +20,4 @@ Production builds default to the live API base:
 npm run build
 ```
 
-The generated bundle calls `https://neo-ai.pw/berserk/...` unless `VITE_API_BASE_URL` is set during build.
+The generated bundle calls `https://www.berserk-ai.com/berserk/...` unless `VITE_API_BASE_URL` is set during build.

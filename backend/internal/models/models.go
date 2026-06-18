@@ -103,25 +103,46 @@ type CreditPackagesResponse struct {
 
 type CreditPurchaseRequest struct {
 	PackageID string `json:"packageID"`
+	Channel   string `json:"channel,omitempty"`
 }
 
 type CreditOrder struct {
-	ID          string    `json:"id,omitempty"`
-	UserID      string    `json:"userID"`
-	PackageID   string    `json:"packageID"`
-	Credits     int       `json:"credits"`
-	AmountCents int       `json:"amountCents"`
-	Currency    string    `json:"currency"`
-	Status      string    `json:"status"`
-	Provider    string    `json:"provider"`
-	CreatedAt   time.Time `json:"createdAt,omitempty"`
-	PaidAt      time.Time `json:"paidAt,omitempty"`
+	ID              string    `json:"id,omitempty"`
+	UserID          string    `json:"userID"`
+	PackageID       string    `json:"packageID"`
+	Credits         int       `json:"credits"`
+	AmountCents     int       `json:"amountCents"`
+	Currency        string    `json:"currency"`
+	Status          string    `json:"status"`
+	Provider        string    `json:"provider"`
+	OutTradeNo      string    `json:"outTradeNo,omitempty"`
+	ProviderTradeNo string    `json:"providerTradeNo,omitempty"`
+	PaidAmountCents int       `json:"paidAmountCents,omitempty"`
+	CreatedAt       time.Time `json:"createdAt,omitempty"`
+	PaidAt          time.Time `json:"paidAt,omitempty"`
 }
 
 type CreditPurchaseResponse struct {
-	Order      CreditOrder `json:"order"`
-	User       User        `json:"user"`
-	PaymentURL string      `json:"paymentURL,omitempty"`
+	Order       CreditOrder `json:"order"`
+	User        User        `json:"user"`
+	PaymentURL  string      `json:"paymentURL,omitempty"`
+	PaymentHTML string      `json:"paymentHTML,omitempty"`
+}
+
+type CreditOrderResponse struct {
+	Order CreditOrder `json:"order"`
+	User  User        `json:"user"`
+}
+
+type AlipayNotification struct {
+	OutTradeNo   string
+	TradeNo      string
+	TradeStatus  string
+	TotalAmount  string
+	RawBody      string
+	Verified     bool
+	Processed    bool
+	ErrorMessage string
 }
 
 type CreditRedeemRequest struct {

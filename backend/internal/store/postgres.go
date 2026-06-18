@@ -52,6 +52,11 @@ type BerserkStore interface {
 	GetReferralSummary(ctx context.Context, userID string) (models.ReferralSummary, error)
 	ApplyReferralRegistration(ctx context.Context, inviterCode string, inviteeUserID string, inviteeIP string) error
 	CreateCreditOrder(ctx context.Context, userID string, pkg models.CreditPackage) (models.CreditOrder, error)
+	CreatePendingCreditOrder(ctx context.Context, userID string, pkg models.CreditPackage, provider string, outTradeNo string, expiresAt time.Time) (models.CreditOrder, error)
+	GetCreditOrder(ctx context.Context, userID string, id string) (models.CreditOrder, error)
+	GetCreditOrderByOutTradeNo(ctx context.Context, outTradeNo string) (models.CreditOrder, error)
+	MarkCreditOrderPaid(ctx context.Context, outTradeNo string, providerTradeNo string, paidAmountCents int) (models.CreditOrder, error)
+	RecordAlipayNotification(ctx context.Context, notification models.AlipayNotification) error
 	ListCreditPackages(ctx context.Context) ([]models.CreditPackage, error)
 	RedeemCreditCode(ctx context.Context, userID string, cardNo string, password string) (int, error)
 	ListImageModels(ctx context.Context) ([]models.ImageModel, error)
@@ -618,6 +623,151 @@ func (p *Postgres) CreateCreditOrder(ctx context.Context, userID string, pkg mod
 		return models.CreditOrder{}, err
 	}
 	return order, tx.Commit(ctx)
+}
+
+func (p *Postgres) CreatePendingCreditOrder(ctx context.Context, userID string, pkg models.CreditPackage, provider string, outTradeNo string, expiresAt time.Time) (models.CreditOrder, error) {
+	provider = firstNonEmptyStore(provider, "alipay")
+	outTradeNo = strings.TrimSpace(outTradeNo)
+	if outTradeNo == "" {
+		return models.CreditOrder{}, errors.New("out trade no is required")
+	}
+	var order models.CreditOrder
+	err := p.pool.QueryRow(ctx, `
+		insert into credit_orders (user_id, package_id, credits, amount_cents, currency, status, provider, out_trade_no, expired_at, updated_at)
+		values ($1::uuid, $2, $3, $4, $5, 'pending', $6, $7, $8, now())
+		returning id::text, user_id::text, package_id, credits, amount_cents, currency, status, provider,
+			out_trade_no, provider_trade_no, paid_amount_cents, created_at, coalesce(paid_at, '0001-01-01 00:00:00+00'::timestamptz)
+	`, userID, pkg.ID, pkg.Credits, pkg.AmountCents, pkg.Currency, provider, outTradeNo, expiresAt).Scan(
+		&order.ID, &order.UserID, &order.PackageID, &order.Credits, &order.AmountCents, &order.Currency, &order.Status, &order.Provider,
+		&order.OutTradeNo, &order.ProviderTradeNo, &order.PaidAmountCents, &order.CreatedAt, &order.PaidAt,
+	)
+	if err != nil {
+		return models.CreditOrder{}, err
+	}
+	return order, nil
+}
+
+func (p *Postgres) GetCreditOrder(ctx context.Context, userID string, id string) (models.CreditOrder, error) {
+	var order models.CreditOrder
+	err := p.pool.QueryRow(ctx, `
+		select id::text, user_id::text, package_id, credits, amount_cents, currency, status, provider,
+			out_trade_no, provider_trade_no, paid_amount_cents, created_at, coalesce(paid_at, '0001-01-01 00:00:00+00'::timestamptz)
+		from credit_orders
+		where id = $1::uuid and user_id = $2::uuid
+	`, id, userID).Scan(
+		&order.ID, &order.UserID, &order.PackageID, &order.Credits, &order.AmountCents, &order.Currency, &order.Status, &order.Provider,
+		&order.OutTradeNo, &order.ProviderTradeNo, &order.PaidAmountCents, &order.CreatedAt, &order.PaidAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.CreditOrder{}, ErrNotFound
+	}
+	if err != nil {
+		return models.CreditOrder{}, err
+	}
+	return order, nil
+}
+
+func (p *Postgres) GetCreditOrderByOutTradeNo(ctx context.Context, outTradeNo string) (models.CreditOrder, error) {
+	var order models.CreditOrder
+	err := p.pool.QueryRow(ctx, `
+		select id::text, user_id::text, package_id, credits, amount_cents, currency, status, provider,
+			out_trade_no, provider_trade_no, paid_amount_cents, created_at, coalesce(paid_at, '0001-01-01 00:00:00+00'::timestamptz)
+		from credit_orders
+		where out_trade_no = $1
+	`, strings.TrimSpace(outTradeNo)).Scan(
+		&order.ID, &order.UserID, &order.PackageID, &order.Credits, &order.AmountCents, &order.Currency, &order.Status, &order.Provider,
+		&order.OutTradeNo, &order.ProviderTradeNo, &order.PaidAmountCents, &order.CreatedAt, &order.PaidAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.CreditOrder{}, ErrNotFound
+	}
+	if err != nil {
+		return models.CreditOrder{}, err
+	}
+	return order, nil
+}
+
+func (p *Postgres) MarkCreditOrderPaid(ctx context.Context, outTradeNo string, providerTradeNo string, paidAmountCents int) (models.CreditOrder, error) {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return models.CreditOrder{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var order models.CreditOrder
+	err = tx.QueryRow(ctx, `
+		select id::text, user_id::text, package_id, credits, amount_cents, currency, status, provider,
+			out_trade_no, provider_trade_no, paid_amount_cents, created_at, coalesce(paid_at, '0001-01-01 00:00:00+00'::timestamptz)
+		from credit_orders
+		where out_trade_no = $1
+		for update
+	`, strings.TrimSpace(outTradeNo)).Scan(
+		&order.ID, &order.UserID, &order.PackageID, &order.Credits, &order.AmountCents, &order.Currency, &order.Status, &order.Provider,
+		&order.OutTradeNo, &order.ProviderTradeNo, &order.PaidAmountCents, &order.CreatedAt, &order.PaidAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return models.CreditOrder{}, ErrNotFound
+	}
+	if err != nil {
+		return models.CreditOrder{}, err
+	}
+	if order.Status == "paid" {
+		return order, tx.Commit(ctx)
+	}
+	if order.Status != "pending" {
+		return models.CreditOrder{}, ErrConflict
+	}
+	if paidAmountCents != order.AmountCents {
+		return models.CreditOrder{}, ErrConflict
+	}
+
+	err = tx.QueryRow(ctx, `
+		update credit_orders
+		set status = 'paid',
+			provider_trade_no = $2,
+			paid_amount_cents = $3,
+			paid_at = now(),
+			updated_at = now()
+		where out_trade_no = $1
+		returning id::text, user_id::text, package_id, credits, amount_cents, currency, status, provider,
+			out_trade_no, provider_trade_no, paid_amount_cents, created_at, coalesce(paid_at, '0001-01-01 00:00:00+00'::timestamptz)
+	`, order.OutTradeNo, strings.TrimSpace(providerTradeNo), paidAmountCents).Scan(
+		&order.ID, &order.UserID, &order.PackageID, &order.Credits, &order.AmountCents, &order.Currency, &order.Status, &order.Provider,
+		&order.OutTradeNo, &order.ProviderTradeNo, &order.PaidAmountCents, &order.CreatedAt, &order.PaidAt,
+	)
+	if err != nil {
+		return models.CreditOrder{}, err
+	}
+	var balance int
+	if err := tx.QueryRow(ctx, `
+		insert into user_credit_accounts (user_id, balance, total_recharged)
+		values ($1::uuid, $2, $2)
+		on conflict (user_id) do update set
+			balance = user_credit_accounts.balance + excluded.balance,
+			total_recharged = user_credit_accounts.total_recharged + excluded.balance,
+			updated_at = now()
+		returning balance
+	`, order.UserID, order.Credits).Scan(&balance); err != nil {
+		return models.CreditOrder{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+		insert into credit_ledger (user_id, delta, balance_after, reason, ref_type, ref_id)
+		values ($1::uuid, $2, $3, 'credit_purchase', 'credit_order', $4)
+	`, order.UserID, order.Credits, balance, order.ID); err != nil {
+		return models.CreditOrder{}, err
+	}
+	if err := p.applyReferralPurchaseBonus(ctx, tx, order.UserID, "credit_order", order.ID, order.Credits); err != nil {
+		return models.CreditOrder{}, err
+	}
+	return order, tx.Commit(ctx)
+}
+
+func (p *Postgres) RecordAlipayNotification(ctx context.Context, notification models.AlipayNotification) error {
+	_, err := p.pool.Exec(ctx, `
+		insert into alipay_notifications (out_trade_no, trade_no, trade_status, total_amount, raw_body, verified, processed, error_message)
+		values ($1, $2, $3, $4, $5, $6, $7, $8)
+	`, notification.OutTradeNo, notification.TradeNo, notification.TradeStatus, notification.TotalAmount, notification.RawBody, notification.Verified, notification.Processed, notification.ErrorMessage)
+	return err
 }
 
 func (p *Postgres) applyReferralPurchaseBonus(ctx context.Context, tx pgx.Tx, inviteeUserID string, refType string, refID string, purchasedCredits int) error {
@@ -1230,7 +1380,7 @@ func (p *Postgres) CreateComicWork(ctx context.Context, userID string, title str
 	var episodeID string
 	if err := tx.QueryRow(ctx, `
 		insert into comic_episodes (work_id, title, summary, sort_order)
-		values ($1::uuid, '第 1 话 · 未命名章节', '粘贴小说文本后，Neo AI 会拆解出分镜页面。', 1)
+		values ($1::uuid, '第 1 话 · 未命名章节', '粘贴小说文本后，Berserk AI 会拆解出分镜页面。', 1)
 		returning id::text
 	`, workID).Scan(&episodeID); err != nil {
 		return models.ComicWork{}, err

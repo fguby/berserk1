@@ -204,6 +204,21 @@ func (s *webImageTestStore) ApplyReferralRegistration(context.Context, string, s
 func (s *webImageTestStore) CreateCreditOrder(context.Context, string, models.CreditPackage) (models.CreditOrder, error) {
 	return models.CreditOrder{}, nil
 }
+func (s *webImageTestStore) CreatePendingCreditOrder(context.Context, string, models.CreditPackage, string, string, time.Time) (models.CreditOrder, error) {
+	return models.CreditOrder{}, nil
+}
+func (s *webImageTestStore) GetCreditOrder(context.Context, string, string) (models.CreditOrder, error) {
+	return models.CreditOrder{}, store.ErrNotFound
+}
+func (s *webImageTestStore) GetCreditOrderByOutTradeNo(context.Context, string) (models.CreditOrder, error) {
+	return models.CreditOrder{}, store.ErrNotFound
+}
+func (s *webImageTestStore) MarkCreditOrderPaid(context.Context, string, string, int) (models.CreditOrder, error) {
+	return models.CreditOrder{}, nil
+}
+func (s *webImageTestStore) RecordAlipayNotification(context.Context, models.AlipayNotification) error {
+	return nil
+}
 func (s *webImageTestStore) ListCreditPackages(context.Context) ([]models.CreditPackage, error) {
 	return nil, nil
 }
